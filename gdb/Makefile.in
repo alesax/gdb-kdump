@@ -131,8 +131,12 @@ CC_LD=$(CC)
 INCLUDE_DIR =  $(srcdir)/../include
 INCLUDE_CFLAGS = -I$(INCLUDE_DIR)
 
+LIBKDUMPFILE = -L$(LIBKDUMPFILE_DIR)/lib64 -lkdumpfile
 # Where is the "-liberty" library?  Typically in ../libiberty.
 LIBIBERTY = ../libiberty/libiberty.a
+
+LIBKDUMPFILE_DIR = /home/alnovak/local
+LIBKDUMPFILE_CFLAGS = -I$(LIBKDUMPFILE_DIR)/include
 
 # Where is the BFD library?  Typically in ../bfd.
 BFD_DIR = ../bfd
@@ -497,7 +501,7 @@ CONFIG_UNINSTALL = @CONFIG_UNINSTALL@
 HAVE_NATIVE_GCORE_TARGET = @HAVE_NATIVE_GCORE_TARGET@
 
 # -I. for config files.
-# -I$(srcdir) for gdb internal headers.
+# >I$(srcdir) for gdb internal headers.
 # -I$(srcdir)/config for more generic config files.
 
 # It is also possible that you will need to add -I/usr/include/sys if
@@ -534,7 +538,8 @@ INTERNAL_CFLAGS_BASE = \
 	$(CFLAGS) $(GLOBAL_CFLAGS) $(PROFILE_CFLAGS) \
 	$(GDB_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) \
 	$(BFD_CFLAGS) $(INCLUDE_CFLAGS) $(LIBDECNUMBER_CFLAGS) \
-	$(INTL_CFLAGS) $(INCGNU) $(ENABLE_CFLAGS) $(INTERNAL_CPPFLAGS)
+	$(INTL_CFLAGS) $(INCGNU) $(ENABLE_CFLAGS) $(INTERNAL_CPPFLAGS) \
+	$(LIBKDUMPFILE_CFLAGS)
 INTERNAL_WARN_CFLAGS = $(INTERNAL_CFLAGS_BASE) $(GDB_WARN_CFLAGS)
 INTERNAL_CFLAGS = $(INTERNAL_WARN_CFLAGS) $(GDB_WERROR_CFLAGS)
 
@@ -558,7 +563,7 @@ CLIBS = $(SIM) $(READLINE) $(OPCODES) $(BFD) $(INTL) $(LIBIBERTY) $(LIBDECNUMBER
 	$(XM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) \
 	@LIBS@ @GUILE_LIBS@ @PYTHON_LIBS@ \
 	$(LIBEXPAT) $(LIBLZMA) $(LIBBABELTRACE) \
-	$(LIBIBERTY) $(WIN32LIBS) $(LIBGNU)
+	$(LIBIBERTY) $(WIN32LIBS) $(LIBGNU) $(LIBKDUMPFILE)
 CDEPS = $(XM_CDEPS) $(NAT_CDEPS) $(SIM) $(BFD) $(READLINE_DEPS) \
 	$(OPCODES) $(INTL_DEPS) $(LIBIBERTY) $(CONFIG_DEPS) $(LIBGNU)
 
@@ -796,7 +801,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	build-id.c buildsym.c \
 	c-exp.y c-lang.c c-typeprint.c c-valprint.c c-varobj.c \
 	charset.c common/cleanups.c cli-out.c coffread.c coff-pe-read.c \
-	complaints.c completer.c continuations.c corefile.c corelow.c \
+	complaints.c completer.c continuations.c corefile.c corelow.c kdump.c kdump_types.c\
 	cp-abi.c cp-support.c cp-namespace.c cp-valprint.c \
 	d-exp.y d-lang.c d-valprint.c \
 	cp-name-parser.y \
@@ -977,7 +982,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	bfd-target.o \
 	blockframe.o breakpoint.o break-catch-sig.o break-catch-throw.o \
 	findvar.o regcache.o cleanups.o \
-	charset.o continuations.o corelow.o disasm.o dummy-frame.o dfp.o \
+	charset.o continuations.o corelow.o kdump.o readkdump.o kdump_types.o disasm.o dummy-frame.o dfp.o \
 	source.o value.o eval.o valops.o valarith.o valprint.o printcmd.o \
 	block.o symtab.o psymtab.o symfile.o symfile-debug.o symmisc.o \
 	linespec.o dictionary.o \
