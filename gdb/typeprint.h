@@ -46,6 +46,8 @@ struct type_print_options
   /* The list of type printers associated with the global typedef
      table.  This is intentionally opaque.  */
   struct ext_lang_type_printers *global_printers;
+
+  unsigned int print_offsets;
 };
 
 extern const struct type_print_options type_print_raw_options;
