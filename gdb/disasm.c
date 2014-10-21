@@ -24,6 +24,10 @@
 #include "disasm.h"
 #include "gdbcore.h"
 #include "dis-asm.h"
+#include "ui-out.h"
+#include "c-lang.h"
+#include "block.h"
+#include "typeprint.h"
 
 /* Disassemble functions.
    FIXME: We should get rid of all the duplicate code in gdb that does
@@ -92,6 +96,42 @@ compare_lines (const void *mle1p, const void *mle2p)
   return val;
 }
 
+
+struct lst {
+  const void *data;
+  struct lst *next;
+};
+
+static void lst_new(struct lst **l)
+{
+  *l = NULL;
+}
+static struct lst *lst_add(struct lst *l, const void *data)
+{
+  struct lst *n = malloc(sizeof (*n));
+  n->next = l;
+  n->data = data;
+  return n;
+}
+
+static int lst_has(struct lst *l, const void *data)
+{
+  for (; l != NULL && l->data != data; l = l->next);
+  return l?1:0;
+}
+
+static void lst_free(struct lst **l)
+{
+  struct lst *n;
+
+  while(*l) {
+    n = (*l)->next;
+    free (* l);
+    *l = NULL;
+    l = &n;
+  }                                                                                                                                                          
+}
+
 static int
 dump_insns (struct gdbarch *gdbarch, struct ui_out *uiout,
 	    struct disassemble_info * di,
@@ -106,6 +146,12 @@ dump_insns (struct gdbarch *gdbarch, struct ui_out *uiout,
   int offset;
   int line;
   struct cleanup *ui_out_chain;
+  struct lst *blocks;
+  struct symtab_and_line sal;
+  const struct block *block;
+
+  if (flags & DISASSEMBLY_HACK) 
+    lst_new (& blocks);
 
   for (pc = low; pc < high;)
     {
@@ -121,6 +167,19 @@ dump_insns (struct gdbarch *gdbarch, struct ui_out *uiout,
 	    num_displayed++;
 	}
       ui_out_chain = make_cleanup_ui_out_tuple_begin_end (uiout, NULL);
+
+      if (flags & DISASSEMBLY_HACK) {
+	block = block_for_pc (pc);                                                                                                                               
+	if (block && ! lst_has(blocks, block)) {
+	  blocks = lst_add (blocks, block);
+	}
+
+	sal = find_pc_line (pc, 1);                                                                                                                              
+        if (sal.symtab && sal.symtab->filename) {
+	  ui_out_field_string (uiout, "file-name", sal.symtab->filename);
+	  ui_out_field_int (uiout, "file-line", sal.line);
+	}
+      }
 
       if ((flags & DISASSEMBLY_OMIT_PC) == 0)
 	ui_out_text (uiout, pc_prefix (pc));
@@ -182,6 +241,57 @@ dump_insns (struct gdbarch *gdbarch, struct ui_out *uiout,
       do_cleanups (ui_out_chain);
       ui_out_text (uiout, "\n");
     }
+
+  if (flags & DISASSEMBLY_HACK) {
+    struct lst *l;
+    ui_out_end (uiout, ui_out_type_list);
+    ui_out_begin (uiout, ui_out_type_list, "blocks");
+    for (l = blocks; l; l = l->next) {
+      struct dict_iterator iter;
+      void *v;
+      block = (struct block*)l->data;
+      ui_out_begin (uiout, ui_out_type_tuple, NULL);
+      ui_out_field_core_addr (uiout, "begin", gdbarch, block->startaddr);
+      ui_out_field_core_addr (uiout, "end", gdbarch, block->endaddr);
+
+      if (block_inlined_p (block)) {
+	ui_out_field_string (uiout, "inlined", SYMBOL_NATURAL_NAME(BLOCK_FUNCTION(block)));
+      }
+
+      ui_out_begin (uiout, ui_out_type_list, "variables");
+      v = dict_iterator_first(block->dict, &iter);                                                                                               
+      while (v != NULL) {
+	struct symbol *ss = (struct symbol*)v;                                    
+	struct type *typ = SYMBOL_TYPE(ss);
+        struct ui_file *mem = mem_fileopen ();
+        struct cleanup *cleanups = make_cleanup_ui_file_delete (mem);
+
+	c_print_type(typ, SYMBOL_NATURAL_NAME(ss), mem, 1, 4, &type_print_raw_options);
+
+	ui_out_begin (uiout, ui_out_type_tuple, NULL);
+
+	ui_out_field_stream (uiout, "variable", mem);
+
+	ui_file_rewind (mem);
+
+	if (SYMBOL_COMPUTED_OPS(ss) != NULL) {
+	  SYMBOL_COMPUTED_OPS(ss)->describe_location(ss, block->startaddr, mem);
+	  ui_out_field_stream (uiout, "dwarf", mem);
+	}
+        ui_out_end (uiout, ui_out_type_tuple);
+	//ui_file_delete (mem);
+        do_cleanups (cleanups);
+	v = dict_iterator_next(&iter);
+      } 
+      ui_out_end (uiout, ui_out_type_list);
+
+      ui_out_end (uiout, ui_out_type_tuple);
+
+    }
+
+    lst_free (& blocks);
+  }
+
   return num_displayed;
 }
 

@@ -1105,6 +1105,12 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 		      }
 		  }
 
+		if (flags->print_offsets == 1) {
+		  if (TYPE_CODE(type) == TYPE_CODE_STRUCT)
+   		    fprintf_filtered (stream, "[0x%03x] ", TYPE_FIELD(type, i).loc.bitpos >> 3);
+		  else
+   		    fprintf_filtered (stream, "         ");
+		}
 		print_spaces_filtered (level + 4, stream);
 		if (field_is_static (&TYPE_FIELD (type, i)))
 		  fprintf_filtered (stream, "static ");
