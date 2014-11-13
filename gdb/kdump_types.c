@@ -117,14 +117,14 @@ void *kdump_type_alloc (struct kdump_type *type, offset addr, int pos, void *buf
 		allocated = 1;
 		buff = malloc(TYPE_LENGTH(type->origtype));
 		if (buff == NULL) {
-			fprintf (stderr, "Cannot allocate memory of %d length\n", TYPE_LENGTH(type->origtype));
+			fprintf (stderr, "Cannot allocate memory of %d length\n", (int)TYPE_LENGTH(type->origtype));
 			return NULL;
 		}
 	}
 
 	if (target_read_raw_memory(addr + (TYPE_LENGTH(type->origtype)*pos), buff, TYPE_LENGTH(type->origtype))) {
 		if (allocated) free(buff);
-		fprintf (stderr, "Cannot read target memory of %d length\n", TYPE_LENGTH(type->origtype));
+		fprintf (stderr, "Cannot read target memory of %d length\n", (int)TYPE_LENGTH(type->origtype));
 		return NULL;
 	}
 

@@ -982,7 +982,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	bfd-target.o \
 	blockframe.o breakpoint.o break-catch-sig.o break-catch-throw.o \
 	findvar.o regcache.o cleanups.o \
-	charset.o continuations.o corelow.o kdump.o readkdump.o kdump_types.o disasm.o dummy-frame.o dfp.o \
+	charset.o continuations.o corelow.o kdump.o kdump_types.o disasm.o dummy-frame.o dfp.o \
 	source.o value.o eval.o valops.o valarith.o valprint.o printcmd.o \
 	block.o symtab.o psymtab.o symfile.o symfile-debug.o symmisc.o \
 	linespec.o dictionary.o \
