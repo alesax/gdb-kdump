@@ -1,6 +1,6 @@
 /* Multi-process/thread control for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
 
@@ -62,7 +62,6 @@ static int highest_thread_num;
    spawned new threads we haven't heard of yet.  */
 static int threads_executing;
 
-static void thread_command (char *tidstr, int from_tty);
 static void thread_apply_all_command (char *, int);
 static int thread_alive (struct thread_info *);
 static void info_threads_command (char *, int);
@@ -636,6 +635,108 @@ prune_threads (void)
     }
 }
 
+/* Disable storing stack temporaries for the thread whose id is
+   stored in DATA.  */
+
+static void
+disable_thread_stack_temporaries (void *data)
+{
+  ptid_t *pd = data;
+  struct thread_info *tp = find_thread_ptid (*pd);
+
+  if (tp != NULL)
+    {
+      tp->stack_temporaries_enabled = 0;
+      VEC_free (value_ptr, tp->stack_temporaries);
+    }
+
+  xfree (pd);
+}
+
+/* Enable storing stack temporaries for thread with id PTID and return a
+   cleanup which can disable and clear the stack temporaries.  */
+
+struct cleanup *
+enable_thread_stack_temporaries (ptid_t ptid)
+{
+  struct thread_info *tp = find_thread_ptid (ptid);
+  ptid_t  *data;
+  struct cleanup *c;
+
+  gdb_assert (tp != NULL);
+
+  tp->stack_temporaries_enabled = 1;
+  tp->stack_temporaries = NULL;
+  data = (ptid_t *) xmalloc (sizeof (ptid_t));
+  *data = ptid;
+  c = make_cleanup (disable_thread_stack_temporaries, data);
+
+  return c;
+}
+
+/* Return non-zero value if stack temporaies are enabled for the thread
+   with id PTID.  */
+
+int
+thread_stack_temporaries_enabled_p (ptid_t ptid)
+{
+  struct thread_info *tp = find_thread_ptid (ptid);
+
+  if (tp == NULL)
+    return 0;
+  else
+    return tp->stack_temporaries_enabled;
+}
+
+/* Push V on to the stack temporaries of the thread with id PTID.  */
+
+void
+push_thread_stack_temporary (ptid_t ptid, struct value *v)
+{
+  struct thread_info *tp = find_thread_ptid (ptid);
+
+  gdb_assert (tp != NULL && tp->stack_temporaries_enabled);
+  VEC_safe_push (value_ptr, tp->stack_temporaries, v);
+}
+
+/* Return 1 if VAL is among the stack temporaries of the thread
+   with id PTID.  Return 0 otherwise.  */
+
+int
+value_in_thread_stack_temporaries (struct value *val, ptid_t ptid)
+{
+  struct thread_info *tp = find_thread_ptid (ptid);
+
+  gdb_assert (tp != NULL && tp->stack_temporaries_enabled);
+  if (!VEC_empty (value_ptr, tp->stack_temporaries))
+    {
+      struct value *v;
+      int i;
+
+      for (i = 0; VEC_iterate (value_ptr, tp->stack_temporaries, i, v); i++)
+	if (v == val)
+	  return 1;
+    }
+
+  return 0;
+}
+
+/* Return the last of the stack temporaries for thread with id PTID.
+   Return NULL if there are no stack temporaries for the thread.  */
+
+struct value *
+get_last_thread_stack_temporary (ptid_t ptid)
+{
+  struct value *lastval = NULL;
+  struct thread_info *tp = find_thread_ptid (ptid);
+
+  gdb_assert (tp != NULL);
+  if (!VEC_empty (value_ptr, tp->stack_temporaries))
+    lastval = VEC_last (value_ptr, tp->stack_temporaries);
+
+  return lastval;
+}
+
 void
 thread_change_ptid (ptid_t old_ptid, ptid_t new_ptid)
 {
@@ -645,7 +746,7 @@ thread_change_ptid (ptid_t old_ptid, ptid_t new_ptid)
   /* It can happen that what we knew as the target inferior id
      changes.  E.g, target remote may only discover the remote process
      pid after adding the inferior to GDB's list.  */
-  inf = find_inferior_pid (ptid_get_pid (old_ptid));
+  inf = find_inferior_ptid (old_ptid);
   inf->pid = ptid_get_pid (new_ptid);
 
   tp = find_thread_ptid (old_ptid);
@@ -1077,7 +1178,7 @@ switch_to_thread (ptid_t ptid)
     {
       struct inferior *inf;
 
-      inf = find_inferior_pid (ptid_get_pid (ptid));
+      inf = find_inferior_ptid (ptid);
       gdb_assert (inf != NULL);
       set_current_program_space (inf->pspace);
       set_current_inferior (inf);
@@ -1188,7 +1289,7 @@ do_restore_current_thread_cleanup (void *arg)
      then don't revert back to it, but instead simply drop back to no
      thread selected.  */
   if (tp
-      && find_inferior_pid (ptid_get_pid (tp->ptid)) != NULL)
+      && find_inferior_ptid (tp->ptid) != NULL)
     restore_current_thread (old->inferior_ptid);
   else
     {
@@ -1280,6 +1381,24 @@ make_cleanup_restore_current_thread (void)
 			    restore_current_thread_cleanup_dtor);
 }
 
+/* If non-zero tp_array_compar should sort in ascending order, otherwise in
+   descending order.  */
+
+static int tp_array_compar_ascending;
+
+/* Sort an array for struct thread_info pointers by their NUM, order is
+   determined by TP_ARRAY_COMPAR_ASCENDING.  */
+
+static int
+tp_array_compar (const void *ap_voidp, const void *bp_voidp)
+{
+  const struct thread_info *const *ap = ap_voidp;
+  const struct thread_info *const *bp = bp_voidp;
+
+  return ((((*ap)->num > (*bp)->num) - ((*ap)->num < (*bp)->num))
+	  * (tp_array_compar_ascending ? +1 : -1));
+}
+
 /* Apply a GDB command to a list of threads.  List syntax is a whitespace
    seperated list of numbers, or ranges, or the keyword `all'.  Ranges consist
    of two numbers seperated by a hyphen.  Examples:
@@ -1295,6 +1414,14 @@ thread_apply_all_command (char *cmd, int from_tty)
   char *saved_cmd;
   int tc;
   struct thread_array_cleanup ta_cleanup;
+
+  tp_array_compar_ascending = 0;
+  if (cmd != NULL
+      && check_for_argument (&cmd, "-ascending", strlen ("-ascending")))
+    {
+      cmd = skip_spaces (cmd);
+      tp_array_compar_ascending = 1;
+    }
 
   if (cmd == NULL || *cmd == '\000')
     error (_("Please specify a command following the thread ID list"));
@@ -1328,6 +1455,8 @@ thread_apply_all_command (char *cmd, int from_tty)
           tp->refcount++;
           i++;
         }
+
+      qsort (tp_array, i, sizeof (*tp_array), tp_array_compar);
 
       make_cleanup (set_thread_refcount, &ta_cleanup);
 
@@ -1404,7 +1533,7 @@ thread_apply_command (char *tidlist, int from_tty)
 /* Switch to the specified thread.  Will dispatch off to thread_apply_command
    if prefix of arg is `apply'.  */
 
-static void
+void
 thread_command (char *tidstr, int from_tty)
 {
   if (!tidstr)
@@ -1637,7 +1766,14 @@ The new thread ID must be currently known."),
 		  &thread_apply_list, "thread apply ", 1, &thread_cmd_list);
 
   add_cmd ("all", class_run, thread_apply_all_command,
-	   _("Apply a command to all threads."), &thread_apply_list);
+	   _("\
+Apply a command to all threads.\n\
+\n\
+Usage: thread apply all [-ascending] <command>\n\
+-ascending: Call <command> for all threads in ascending order.\n\
+            The default is descending order.\
+"),
+	   &thread_apply_list);
 
   add_cmd ("name", class_run, thread_name_command,
 	   _("Set the current thread's name.\n\

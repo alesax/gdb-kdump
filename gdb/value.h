@@ -1,6 +1,6 @@
 /* Definitions for values of C expressions, for GDB.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1037,6 +1037,8 @@ extern void preserve_values (struct objfile *);
 extern struct value *value_copy (struct value *);
 
 extern struct value *value_non_lval (struct value *);
+
+extern void value_force_lval (struct value *, CORE_ADDR);
 
 extern void preserve_one_value (struct value *, struct objfile *, htab_t);
 

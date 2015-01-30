@@ -1,5 +1,5 @@
 /* V850-specific support for 32-bit ELF
-   Copyright (C) 1996-2014 Free Software Foundation, Inc.
+   Copyright (C) 1996-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -895,11 +895,11 @@ static reloc_howto_type v850_elf_howto_table[] =
   /* This reloc does nothing.  */
   HOWTO (R_V850_NONE,			/* Type.  */
 	 0,				/* Rightshift.  */
-	 2,				/* Size (0 = byte, 1 = short, 2 = long).  */
-	 32,				/* Bitsize.  */
+	 3,				/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,				/* Bitsize.  */
 	 FALSE,				/* PC_relative.  */
 	 0,				/* Bitpos.  */
-	 complain_overflow_bitfield,	/* Complain_on_overflow.  */
+	 complain_overflow_dont,	/* Complain_on_overflow.  */
 	 bfd_elf_generic_reloc,		/* Special_function.  */
 	 "R_V850_NONE",			/* Name.  */
 	 FALSE,				/* Partial_inplace.  */
@@ -1896,7 +1896,11 @@ v850_elf_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED,
   unsigned int r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
-  BFD_ASSERT (r_type < (unsigned int) R_V850_max);
+  if (r_type >= (unsigned int) R_V850_max)
+    {
+      _bfd_error_handler (_("%A: invalid V850 reloc number: %d"), abfd, r_type);
+      r_type = 0;
+    }
   cache_ptr->howto = &v850_elf_howto_table[r_type];
 }
 
@@ -1910,7 +1914,11 @@ v850_elf_info_to_howto_rela (bfd *abfd ATTRIBUTE_UNUSED,
   unsigned int r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
-  BFD_ASSERT (r_type < (unsigned int) R_V850_max);
+  if (r_type >= (unsigned int) R_V850_max)
+    {
+      _bfd_error_handler (_("%A: invalid V850 reloc number: %d"), abfd, r_type);
+      r_type = 0;
+    }
   cache_ptr->howto = &v850_elf_howto_table[r_type];
 }
 

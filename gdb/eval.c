@@ -1,6 +1,6 @@
 /* Evaluate expressions for GDB.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,6 +24,7 @@
 #include "expression.h"
 #include "target.h"
 #include "frame.h"
+#include "gdbthread.h"
 #include "language.h"		/* For CAST_IS_CONVERSION.  */
 #include "f-lang.h"		/* For array bound stuff.  */
 #include "cp-abi.h"
@@ -63,8 +64,29 @@ struct value *
 evaluate_subexp (struct type *expect_type, struct expression *exp,
 		 int *pos, enum noside noside)
 {
-  return (*exp->language_defn->la_exp_desc->evaluate_exp) 
+  struct cleanup *cleanups;
+  struct value *retval;
+  int cleanup_temps = 0;
+
+  if (*pos == 0 && target_has_execution
+      && exp->language_defn->la_language == language_cplus
+      && !thread_stack_temporaries_enabled_p (inferior_ptid))
+    {
+      cleanups = enable_thread_stack_temporaries (inferior_ptid);
+      cleanup_temps = 1;
+    }
+
+  retval = (*exp->language_defn->la_exp_desc->evaluate_exp)
     (expect_type, exp, pos, noside);
+
+  if (cleanup_temps)
+    {
+      if (value_in_thread_stack_temporaries (retval, inferior_ptid))
+	retval = value_non_lval (retval);
+      do_cleanups (cleanups);
+    }
+
+  return retval;
 }
 
 /* Parse the string EXP as a C expression, evaluate it,
@@ -1332,9 +1354,6 @@ evaluate_subexp_standard (struct type *expect_type,
 	  /* First, evaluate the structure into arg2.  */
 	  pc2 = (*pos)++;
 
-	  if (noside == EVAL_SKIP)
-	    goto nosideret;
-
 	  if (op == STRUCTOP_MEMBER)
 	    {
 	      arg2 = evaluate_subexp_for_address (exp, pos, noside);
@@ -1353,7 +1372,10 @@ evaluate_subexp_standard (struct type *expect_type,
 	  arg1 = evaluate_subexp (NULL_TYPE, exp, pos, noside);
 
 	  type = check_typedef (value_type (arg1));
-	  if (TYPE_CODE (type) == TYPE_CODE_METHODPTR)
+	  if (noside == EVAL_SKIP)
+	    tem = 1;  /* Set it to the right arg index so that all arguments
+			 can also be skipped.  */
+	  else if (TYPE_CODE (type) == TYPE_CODE_METHODPTR)
 	    {
 	      if (noside == EVAL_AVOID_SIDE_EFFECTS)
 		arg1 = value_zero (TYPE_TARGET_TYPE (type), not_lval);
@@ -1396,8 +1418,6 @@ evaluate_subexp_standard (struct type *expect_type,
 	  pc2 = (*pos)++;
 	  tem2 = longest_to_int (exp->elts[pc2 + 1].longconst);
 	  *pos += 3 + BYTES_TO_EXP_ELEM (tem2 + 1);
-	  if (noside == EVAL_SKIP)
-	    goto nosideret;
 
 	  if (op == STRUCTOP_STRUCT)
 	    {
@@ -1545,6 +1565,9 @@ evaluate_subexp_standard (struct type *expect_type,
 
       /* Signal end of arglist.  */
       argvec[tem] = 0;
+
+      if (noside == EVAL_SKIP)
+	goto nosideret;
 
       if (op == OP_ADL_FUNC)
         {
@@ -1695,8 +1718,6 @@ evaluate_subexp_standard (struct type *expect_type,
 
     do_call_it:
 
-      if (noside == EVAL_SKIP)
-	goto nosideret;
       if (argvec[0] == NULL)
 	error (_("Cannot evaluate function -- may be inlined"));
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
@@ -1803,6 +1824,8 @@ evaluate_subexp_standard (struct type *expect_type,
 	  for (; tem <= nargs; tem++)
 	    argvec[tem] = evaluate_subexp_with_coercion (exp, pos, noside);
 	  argvec[tem] = 0;	/* signal end of arglist */
+	  if (noside == EVAL_SKIP)
+	    goto nosideret;
 	  goto do_call_it;
 
 	default:
@@ -1869,7 +1892,7 @@ evaluate_subexp_standard (struct type *expect_type,
 
 	get_user_print_options (&opts);
         if (opts.objectprint && TYPE_TARGET_TYPE(type)
-            && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_CLASS))
+            && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT))
           {
             real_type = value_rtti_indirect_type (arg1, &full, &top,
 						  &using_enc);

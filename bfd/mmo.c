@@ -1,5 +1,5 @@
 /* BFD back-end for mmo objects (MMIX-specific object-format).
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2015 Free Software Foundation, Inc.
    Written by Hans-Peter Nilsson (hp@bitrange.com).
    Infrastructure and other bits originally copied from srec.c and
    binary.c.
@@ -3203,6 +3203,9 @@ mmo_write_object_contents (bfd *abfd)
 #define mmo_bfd_is_local_label_name bfd_generic_is_local_label_name
 #define mmo_bfd_is_target_special_symbol  \
   ((bfd_boolean (*) (bfd *, asymbol *)) bfd_false)
+
+#define mmo_get_symbol_version_string \
+  _bfd_nosymbols_get_symbol_version_string
 
 /* Is this one really used or defined by anyone?  */
 #define mmo_get_lineno _bfd_nosymbols_get_lineno

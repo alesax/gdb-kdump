@@ -1,5 +1,5 @@
 /* BFD semi-generic back-end for a.out binaries.
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -203,8 +203,8 @@ reloc_howto_type howto_table_ext[] =
   HOWTO (RELOC_GLOB_DAT,0,  2,	0,  FALSE, 0, complain_overflow_bitfield, 0, "GLOB_DAT",    FALSE, 0, 0x00000000, FALSE),
   HOWTO (RELOC_JMP_SLOT,0,  2,	0,  FALSE, 0, complain_overflow_bitfield, 0, "JMP_SLOT",    FALSE, 0, 0x00000000, FALSE),
   HOWTO (RELOC_RELATIVE,0,  2,	0,  FALSE, 0, complain_overflow_bitfield, 0, "RELATIVE",    FALSE, 0, 0x00000000, FALSE),
-  HOWTO (0,             0,  0,  0,  FALSE, 0, complain_overflow_dont,     0, "R_SPARC_NONE",FALSE, 0, 0x00000000, TRUE),
-  HOWTO (0,             0,  0,  0,  FALSE, 0, complain_overflow_dont,     0, "R_SPARC_NONE",FALSE, 0, 0x00000000, TRUE),
+  HOWTO (0,             0,  3,  0,  FALSE, 0, complain_overflow_dont,     0, "R_SPARC_NONE",FALSE, 0, 0x00000000, TRUE),
+  HOWTO (0,             0,  3,  0,  FALSE, 0, complain_overflow_dont,     0, "R_SPARC_NONE",FALSE, 0, 0x00000000, TRUE),
 #define RELOC_SPARC_REV32 RELOC_WDISP19
   HOWTO (RELOC_SPARC_REV32, 0, 2, 32, FALSE, 0, complain_overflow_dont,   0,"R_SPARC_REV32",FALSE, 0, 0xffffffff, FALSE),
 };
@@ -1300,14 +1300,14 @@ aout_get_external_symbols (bfd *abfd)
     {
       bfd_size_type count;
       struct external_nlist *syms;
+      bfd_size_type amt = exec_hdr (abfd)->a_syms;
 
-      count = exec_hdr (abfd)->a_syms / EXTERNAL_NLIST_SIZE;
+      count = amt / EXTERNAL_NLIST_SIZE;
       if (count == 0)
 	return TRUE;		/* Nothing to do.  */
 
 #ifdef USE_MMAP
-      if (! bfd_get_file_window (abfd, obj_sym_filepos (abfd),
-				 exec_hdr (abfd)->a_syms,
+      if (! bfd_get_file_window (abfd, obj_sym_filepos (abfd), amt,
 				 &obj_aout_sym_window (abfd), TRUE))
 	return FALSE;
       syms = (struct external_nlist *) obj_aout_sym_window (abfd).data;
@@ -1315,20 +1315,16 @@ aout_get_external_symbols (bfd *abfd)
       /* We allocate using malloc to make the values easy to free
 	 later on.  If we put them on the objalloc it might not be
 	 possible to free them.  */
-      syms = (struct external_nlist *) bfd_malloc (count * EXTERNAL_NLIST_SIZE);
+      syms = (struct external_nlist *) bfd_malloc (amt);
       if (syms == NULL)
 	return FALSE;
 
-      {
-	bfd_size_type amt;
-	amt = exec_hdr (abfd)->a_syms;
-	if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
-	    || bfd_bread (syms, amt, abfd) != amt)
-	  {
-	    free (syms);
-	    return FALSE;
-	  }
-      }
+      if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
+	  || bfd_bread (syms, amt, abfd) != amt)
+	{
+	  free (syms);
+	  return FALSE;
+	}
 #endif
 
       obj_aout_external_syms (abfd) = syms;
@@ -3820,7 +3816,7 @@ aout_link_reloc_link_order (struct aout_final_link_info *flaginfo,
 
 	  size = bfd_get_reloc_size (howto);
 	  buf = (bfd_byte *) bfd_zmalloc (size);
-	  if (buf == NULL)
+	  if (buf == NULL && size != 0)
 	    return FALSE;
 	  r = MY_relocate_contents (howto, flaginfo->output_bfd,
 				    (bfd_vma) pr->addend, buf);

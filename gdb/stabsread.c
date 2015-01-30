@@ -1,6 +1,6 @@
 /* Support routines for decoding "stabs" debugging information format.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -675,6 +675,9 @@ define_symbol (CORE_ADDR valu, char *string, int desc, int type,
       SYMBOL_LINE (sym) = 0;	/* unknown */
     }
 
+  SYMBOL_SET_LANGUAGE (sym, current_subfile->language,
+		       &objfile->objfile_obstack);
+
   if (is_cplus_marker (string[0]))
     {
       /* Special GNU C++ names.  */
@@ -710,8 +713,6 @@ define_symbol (CORE_ADDR valu, char *string, int desc, int type,
   else
     {
     normal:
-      SYMBOL_SET_LANGUAGE (sym, current_subfile->language,
-			   &objfile->objfile_obstack);
       if (SYMBOL_LANGUAGE (sym) == language_cplus)
 	{
 	  char *name = alloca (p - string + 1);

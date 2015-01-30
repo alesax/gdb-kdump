@@ -1,6 +1,6 @@
 /* GNU/Linux on ARM target support.
 
-   Copyright (C) 1999-2014 Free Software Foundation, Inc.
+   Copyright (C) 1999-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1361,7 +1361,7 @@ arm_linux_init_abi (struct gdbarch_info info,
   linux_init_abi (info, gdbarch);
 
   tdep->lowest_pc = 0x8000;
-  if (info.byte_order == BFD_ENDIAN_BIG)
+  if (info.byte_order_for_code == BFD_ENDIAN_BIG)
     {
       if (tdep->arm_abi == ARM_ABI_AAPCS)
 	tdep->arm_breakpoint = eabi_linux_arm_be_breakpoint;
@@ -1468,7 +1468,7 @@ arm_linux_init_abi (struct gdbarch_info info,
   tdep->syscall_next_pc = arm_linux_syscall_next_pc;
 
   /* `catch syscall' */
-  set_xml_syscall_file_name ("syscalls/arm-linux.xml");
+  set_xml_syscall_file_name (gdbarch, "syscalls/arm-linux.xml");
   set_gdbarch_get_syscall_number (gdbarch, arm_linux_get_syscall_number);
 
   /* Syscall record.  */

@@ -1,5 +1,5 @@
 /* Common definitions for remote server for GDB.
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,15 +28,6 @@ gdb_static_assert (sizeof (CORE_ADDR) >= sizeof (void *));
 #endif
 
 #include "version.h"
-
-#ifdef HAVE_ALLOCA_H
-#include <alloca.h>
-#endif
-/* On some systems such as MinGW, alloca is declared in malloc.h
-   (there is no alloca.h).  */
-#if HAVE_MALLOC_H
-#include <malloc.h>
-#endif
 
 #if !HAVE_DECL_STRERROR
 #ifndef strerror

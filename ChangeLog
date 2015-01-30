@@ -1,3 +1,56 @@
+2015-01-28  James Bowman  <james.bowman@ftdichip.com>
+
+	* configure.ac: Add FT32 support.
+	* configure: Regenerate.
+
+2015-01-12  Anthony Green  <green@moxielogic.com>
+
+	* configure.ac: Don't disable gprof for moxie.
+	* configure: Rebuild.
+
+2015-01-03  Andrew Pinski  <apinski@cavium.com>
+
+	* Makefile.def (flags_to_pass): Pass OBJCOPY_FOR_TARGET also.
+	* Makefile.tpl (HOST_EXPORTS): Add OBJCOPY_FOR_TARGET.
+	(BASE_TARGET_EXPORTS): Add OBJCOPY.
+	(OBJCOPY_FOR_TARGET): New variable.
+	(EXTRA_TARGET_FLAGS): Add OBJCOPY.
+	* Makefile.in: Regenerate.
+	* configure.ac: Check for already installed target objcopy.
+	Also GCC_TARGET_TOOL on objcopy.
+	* configure: Regenerate.
+
+2015-01-02  Hans-Peter Nilsson  <hp@bitrange.com>
+
+	* config.sub: Update from upstream, to 2015-01-01 version.
+	* config.guess: Ditto.
+
+2014-12-06  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* config.sub: Update from upstream config repo.
+
+2014-11-24  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* libtool.m4: Updated from GCC trunk.
+
+2014-11-16  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* config.guess: Update from upstream config repo.
+	* config.sub: Ditto.
+
+2014-11-16  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* move-if-change: Update from upstream gnulib.
+
+2014-11-16  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* compile: Sync with upstream Automake.
+	* depcomp: Ditto.
+	* install-sh: Ditto.
+	* missing: Ditto.
+	* mkinstalldirs: Ditto.
+	* ylwrap: Ditto.
+
 2014-10-15  Tristan Gingold  <gingold@adacore.com>
 
 	* src-release.sh (do_proto_toplev): Configure with --target.

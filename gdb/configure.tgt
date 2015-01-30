@@ -138,7 +138,7 @@ frv-*-*)
 	gdb_sim=../sim/frv/libsim.a
 	;;
 
-moxie-*-elf | moxie-*-rtems*)
+moxie-*-elf | moxie-*-moxiebox | moxie-*-rtems*)
 	gdb_target_obs="moxie-tdep.o"
 	gdb_sim=../sim/moxie/libsim.a
 	;;
@@ -364,6 +364,11 @@ mips64*-*-openbsd*)
 	# Target: OpenBSD/mips64
 	gdb_target_obs="mips-tdep.o mips64obsd-tdep.o obsd-tdep.o solib-svr4.o"
 	;;
+mips*-sde*-elf*)
+	# Target: MIPS SDE
+	gdb_target_obs="mips-tdep.o mips-sde-tdep.o remote-mips.o"
+	gdb_sim=../sim/mips/libsim.a
+	;;
 mips*-*-elf)
 	# Target: MIPS ELF
 	gdb_target_obs="mips-tdep.o remote-mips.o"
@@ -434,7 +439,8 @@ powerpc*-*-linux*)
 			ppc64-tdep.o solib-svr4.o solib-spu.o \
 			spu-multiarch.o \
 			glibc-tdep.o symfile-mem.o linux-tdep.o \
-			ravenscar-thread.o ppc-ravenscar-thread.o"
+			ravenscar-thread.o ppc-ravenscar-thread.o \
+			linux-record.o "
 	gdb_sim=../sim/ppc/libsim.a
 	build_gdbserver=yes
 	;;
@@ -630,7 +636,7 @@ vax-*-openbsd*)
 	gdb_target_obs="vax-tdep.o vaxobsd-tdep.o"
 	;;
 vax-*-*)
-	# Target: VAX running 4.2BSD or Ultrix
+	# Target: VAX
 	gdb_target_obs="vax-tdep.o"
 	;;
 

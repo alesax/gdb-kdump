@@ -1,5 +1,5 @@
 /* 32-bit ELF support for ARM
-   Copyright (C) 1998-2014 Free Software Foundation, Inc.
+   Copyright (C) 1998-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -79,7 +79,7 @@ static reloc_howto_type elf32_arm_howto_table_1[] =
   /* No relocation.  */
   HOWTO (R_ARM_NONE,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 3,			/* size (0 = byte, 1 = short, 2 = long) */
 	 0,			/* bitsize */
 	 FALSE,			/* pc_relative */
 	 0,			/* bitpos */
@@ -8416,6 +8416,21 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
 	  Elf_Internal_Rela outrel;
 	  bfd_boolean skip, relocate;
 
+	  if ((r_type == R_ARM_REL32 || r_type == R_ARM_REL32_NOI)
+	      && !h->def_regular)
+	    {
+	      char *v = _("shared object");
+
+	      if (info->executable)
+		v = _("PIE executable");
+
+	      (*_bfd_error_handler)
+		(_("%B: relocation %s against external or undefined symbol `%s'"
+		   " can not be used when making a %s; recompile with -fPIC"), input_bfd,
+		 elf32_arm_howto_table_1[r_type].name, h->root.root.string, v);
+	      return bfd_reloc_notsupported;
+	    }
+
 	  *unresolved_reloc_p = FALSE;
 
 	  if (sreloc == NULL && globals->root.dynamic_sections_created)
@@ -11700,11 +11715,18 @@ elf32_arm_merge_eabi_attributes (bfd *ibfd, bfd *obfd)
   static const int order_021[3] = {0, 2, 1};
   int i;
   bfd_boolean result = TRUE;
+  const char *sec_name = get_elf_backend_data (ibfd)->obj_attrs_section;
 
   /* Skip the linker stubs file.  This preserves previous behavior
      of accepting unknown attributes in the first input file - but
      is that a bug?  */
   if (ibfd->flags & BFD_LINKER_CREATED)
+    return TRUE;
+
+  /* Skip any input that hasn't attribute section.
+     This enables to link object files without attribute section with
+     any others.  */
+  if (bfd_get_section_by_name (ibfd, sec_name) == NULL)
     return TRUE;
 
   if (!elf_known_obj_attributes_proc (obfd)[0].i)
@@ -11746,10 +11768,14 @@ elf32_arm_merge_eabi_attributes (bfd *ibfd, bfd *obfd)
   /* This needs to happen before Tag_ABI_FP_number_model is merged.  */
   if (in_attr[Tag_ABI_VFP_args].i != out_attr[Tag_ABI_VFP_args].i)
     {
-      /* Ignore mismatches if the object doesn't use floating point.  */
-      if (out_attr[Tag_ABI_FP_number_model].i == 0)
+      /* Ignore mismatches if the object doesn't use floating point or is
+	 floating point ABI independent.  */
+      if (out_attr[Tag_ABI_FP_number_model].i == AEABI_FP_number_model_none
+	  || (in_attr[Tag_ABI_FP_number_model].i != AEABI_FP_number_model_none
+	      && out_attr[Tag_ABI_VFP_args].i == AEABI_VFP_args_compatible))
 	out_attr[Tag_ABI_VFP_args].i = in_attr[Tag_ABI_VFP_args].i;
-      else if (in_attr[Tag_ABI_FP_number_model].i != 0)
+      else if (in_attr[Tag_ABI_FP_number_model].i != AEABI_FP_number_model_none
+	       && in_attr[Tag_ABI_VFP_args].i != AEABI_VFP_args_compatible)
 	{
 	  _bfd_error_handler
 	    (_("error: %B uses VFP register arguments, %B does not"),
@@ -11948,7 +11974,7 @@ elf32_arm_merge_eabi_attributes (bfd *ibfd, bfd *obfd)
 		 when it's 0.  It might mean absence of FP hardware if
 		 Tag_FP_arch is zero, otherwise it is effectively SP + DP.  */
 
-#define VFP_VERSION_COUNT 8
+#define VFP_VERSION_COUNT 9
 	      static const struct
 	      {
 		  int ver;
@@ -11962,7 +11988,8 @@ elf32_arm_merge_eabi_attributes (bfd *ibfd, bfd *obfd)
 		  {3, 16},
 		  {4, 32},
 		  {4, 16},
-		  {8, 32}
+		  {8, 32},
+		  {8, 16}
 		};
 	      int ver;
 	      int regs;
@@ -13331,7 +13358,7 @@ elf32_arm_adjust_dynamic_symbol (struct bfd_link_info * info,
       h->needs_copy = 1;
     }
 
-  return _bfd_elf_adjust_dynamic_copy (h, s);
+  return _bfd_elf_adjust_dynamic_copy (info, h, s);
 }
 
 /* Allocate space in .plt, .got and associated reloc sections for
@@ -14711,7 +14738,7 @@ elf32_arm_post_process_headers (bfd * abfd, struct bfd_link_info * link_info ATT
       && ((i_ehdrp->e_type == ET_DYN) || (i_ehdrp->e_type == ET_EXEC)))
     {
       int abi = bfd_elf_get_obj_attr_int (abfd, OBJ_ATTR_PROC, Tag_ABI_VFP_args);
-      if (abi)
+      if (abi == AEABI_VFP_args_vfp)
 	i_ehdrp->e_flags |= EF_ARM_ABI_FLOAT_HARD;
       else
 	i_ehdrp->e_flags |= EF_ARM_ABI_FLOAT_SOFT;
@@ -15956,6 +15983,26 @@ const struct elf_size_info elf32_arm_size_info =
   bfd_elf32_swap_reloca_out
 };
 
+static bfd_vma
+read_code32 (const bfd *abfd, const bfd_byte *addr)
+{
+  /* V7 BE8 code is always little endian.  */
+  if ((elf_elfheader (abfd)->e_flags & EF_ARM_BE8) != 0)
+    return bfd_getl32 (addr);
+
+  return bfd_get_32 (abfd, addr);
+}
+
+static bfd_vma
+read_code16 (const bfd *abfd, const bfd_byte *addr)
+{
+  /* V7 BE8 code is always little endian.  */
+  if ((elf_elfheader (abfd)->e_flags & EF_ARM_BE8) != 0)
+    return bfd_getl16 (addr);
+
+  return bfd_get_16 (abfd, addr);
+}
+
 /* Return size of plt0 entry starting at ADDR
    or (bfd_vma) -1 if size can not be determined.  */
 
@@ -15965,7 +16012,7 @@ elf32_arm_plt0_size (const bfd *abfd, const bfd_byte *addr)
   bfd_vma first_word;
   bfd_vma plt0_size;
 
-  first_word = H_GET_32 (abfd, addr);
+  first_word = read_code32 (abfd, addr);
 
   if (first_word == elf32_arm_plt0_entry[0])
     plt0_size = 4 * ARRAY_SIZE (elf32_arm_plt0_entry);
@@ -15990,17 +16037,17 @@ elf32_arm_plt_size (const bfd *abfd, const bfd_byte *start, bfd_vma offset)
   const bfd_byte *addr = start + offset;
 
   /* PLT entry size if fixed on Thumb-only platforms.  */
-  if (H_GET_32(abfd, start) == elf32_thumb2_plt0_entry[0])
+  if (read_code32 (abfd, start) == elf32_thumb2_plt0_entry[0])
       return 4 * ARRAY_SIZE (elf32_thumb2_plt_entry);
 
   /* Respect Thumb stub if necessary.  */
-  if (H_GET_16(abfd, addr) == elf32_arm_plt_thumb_stub[0])
+  if (read_code16 (abfd, addr) == elf32_arm_plt_thumb_stub[0])
     {
       plt_size += 2 * ARRAY_SIZE(elf32_arm_plt_thumb_stub);
     }
 
   /* Strip immediate from first add.  */
-  first_insn = H_GET_32(abfd, addr + plt_size) & 0xffffff00;
+  first_insn = read_code32 (abfd, addr + plt_size) & 0xffffff00;
 
 #ifdef FOUR_WORD_PLT
   if (first_insn == elf32_arm_plt_entry[0])

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2014 Free Software Foundation, Inc.
+/* Copyright (C) 2011-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -69,6 +69,11 @@ struct buffer;
 
 #endif /* PTRACE_EVENT_FORK */
 
+#ifndef PTRACE_O_EXITKILL
+/* Only defined in Linux Kernel 3.8 or later.  */
+#define PTRACE_O_EXITKILL	0x00100000
+#endif
+
 #if (defined __bfin__ || defined __frv__ || defined __sh__) \
     && !defined PTRACE_GETFDPIC
 #define PTRACE_GETFDPIC		31
@@ -84,8 +89,16 @@ struct buffer;
 #endif
 
 extern void linux_ptrace_attach_fail_reason (pid_t pid, struct buffer *buffer);
+
+/* Find all possible reasons we could have failed to attach to PTID
+   and return them as a string.  ERR is the error PTRACE_ATTACH failed
+   with (an errno).  The result is stored in a static buffer.  This
+   string should be copied into a buffer by the client if the string
+   will not be immediately used, or if it must persist.  */
+extern char *linux_ptrace_attach_fail_reason_string (ptid_t ptid, int err);
+
 extern void linux_ptrace_init_warnings (void);
-extern void linux_enable_event_reporting (pid_t pid);
+extern void linux_enable_event_reporting (pid_t pid, int attached);
 extern void linux_disable_event_reporting (pid_t pid);
 extern int linux_supports_tracefork (void);
 extern int linux_supports_traceclone (void);

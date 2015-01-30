@@ -1,5 +1,5 @@
 /* Linker file opening and searching.
-   Copyright (C) 1991-2014 Free Software Foundation, Inc.
+   Copyright (C) 1991-2015 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -302,7 +302,7 @@ success:
      will be needed when and if we want to bfd_create a new
      one using this one as a template.  */
   if (bfd_check_format (entry->the_bfd, bfd_object)
-      && plugin_active_plugins_p ()
+      && link_info.lto_plugin_active
       && !no_more_claiming)
     {
       int fd = open (attempt, O_RDONLY | O_BINARY);

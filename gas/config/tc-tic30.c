@@ -1,5 +1,5 @@
 /* tc-c30.c -- Assembly code for the Texas Instruments TMS320C30
-   Copyright (C) 1998-2014 Free Software Foundation, Inc.
+   Copyright (C) 1998-2015 Free Software Foundation, Inc.
    Contributed by Steven Haworth (steve@pm.cse.rmit.edu.au)
 
    This file is part of GAS, the GNU Assembler.
@@ -1116,7 +1116,7 @@ md_estimate_size_before_relax (fragS *fragP ATTRIBUTE_UNUSED,
 void
 md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
 		 segT sec ATTRIBUTE_UNUSED,
-		 register fragS *fragP ATTRIBUTE_UNUSED)
+		 fragS *fragP ATTRIBUTE_UNUSED)
 {
   debug ("In md_convert_frag()\n");
 }

@@ -1,6 +1,6 @@
 # configure.tgt
 #
-#   Copyright (C) 2013-2014 Free Software Foundation, Inc.
+#   Copyright (C) 2013-2015 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -744,6 +744,8 @@ tilegxbe-*-*)		targ_emul=elf64tilegx_be
 			targ_extra_emuls="elf64tilegx elf32tilegx elf32tilegx_be"
 			targ_extra_libpath=$targ_extra_emuls ;;
 tilepro-*-*)		targ_emul=elf32tilepro ;;
+ft32-*-*)		targ_emul=elf32ft32
+			;;
 v850*-*-*)		targ_emul=v850_rh850
 			targ_extra_emuls=v850
 			;;
@@ -754,6 +756,8 @@ vax-*-netbsdaout* | vax-*-netbsd*)
 			targ_emul=vaxnbsd
 			targ_extra_emuls=elf32vax ;;
 vax-*-linux-*)  	targ_emul=elf32vax
+			;;
+visium-*-elf)		targ_emul=elf32visium
 			;;
 w65-*-*)		targ_emul=w65
 			;;

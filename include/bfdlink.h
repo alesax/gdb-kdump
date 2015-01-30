@@ -1,5 +1,5 @@
 /* bfdlink.h -- header file for BFD link routines
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
    Written by Steve Chamberlain and Ian Lance Taylor, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -91,7 +91,13 @@ struct bfd_link_hash_entry
   /* Type of this entry.  */
   ENUM_BITFIELD (bfd_link_hash_type) type : 8;
 
+  /* Symbol is referenced in a normal object file, as distict from a LTO
+     IR object file.  */
   unsigned int non_ir_ref : 1;
+
+  /* Symbol is a built-in define.  These will be overridden by PROVIDE
+     in a linker script.  */
+  unsigned int linker_def : 1;
 
   /* A union of information depending upon the type.  */
   union
@@ -416,6 +422,9 @@ struct bfd_link_info
 
   /* TRUE if the linker script contained an explicit PHDRS command.  */
   unsigned int user_phdrs: 1;
+
+  /* TRUE if BND prefix in PLT entries is always generated.  */
+  unsigned int bndplt: 1;
 
   /* Char that may appear as the first char of a symbol, but should be
      skipped (like symbol_leading_char) when looking up symbols in

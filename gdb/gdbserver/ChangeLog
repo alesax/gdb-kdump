@@ -1,3 +1,225 @@
+2015-01-15  Sergio Durigan Junior  <sergiodj@redhat.com>
+
+	* Makefile.in (SFILES): Add linux-personality.c.
+	(linux-personality.o): New rule.
+	* configure.srv (srv_linux_obj): Add linux-personality.o to the
+	list of objects to be built.
+	* linux-low.c: Include nat/linux-personality.h.
+	(linux_create_inferior): Remove code to disable address space
+	randomization (moved to ../nat/linux-personality.c).  Create
+	cleanup to disable address space randomization.
+
+2015-01-15  Sergio Durigan Junior  <sergiodj@redhat.com>
+
+	* Makefile.in (posix-strerror.o): New rule.
+	(mingw-strerror.o): Likewise.
+	* configure: Regenerated.
+	* configure.ac: Source file ../common/common.host.  Initialize new
+	variable srv_host_obs.  Add srv_host_obs to GDBSERVER_DEPFILES.
+
+2015-01-14  Yao Qi  <yao@codesourcery.com>
+
+	* Makefile.in (SFILES): Add nat/ppc-linux.c.
+	(ppc-linux.o): New rule.
+	* configure.srv (powerpc*-*-linux*): Add ppc-linux.o.
+	* configure.ac: AC_CHECK_FUNCS(getauxval).
+	* config.in: Re-generated.
+	* configure: Re-generated.
+	* linux-ppc-low.c (ppc_arch_setup) [__powerpc64__]: Call
+	ppc64_64bit_inferior_p
+
+2015-01-14  Yao Qi  <yao@codesourcery.com>
+
+	* linux-ppc-low.c: Include "nat/ppc-linux.h".
+	 (PPC_FEATURE_HAS_VSX): Move to nat/ppc-linux.h.
+	(PPC_FEATURE_HAS_ALTIVEC,  PPC_FEATURE_HAS_SPE): Likewise.
+	(PT_ORIG_R3, PT_TRAP): Likewise.
+	(PTRACE_GETVSXREGS, PTRACE_SETVSXREGS): Likewise.
+	(PTRACE_GETVRREGS, PTRACE_SETVRREGS): Likewise.
+	(PTRACE_GETEVRREGS, PTRACE_SETEVRREGS): Likewise.
+
+2015-01-10  Joel Brobecker  <brobecker@adacore.com>
+
+	* i387-fp.c (i387_cache_to_xsave): In look over
+	num_avx512_zmmh_high_registers, replace use of struct i387_xsave
+	zmmh_low_space field by use of zmmh_high_space.
+
+2015-01-09  Pedro Alves  <palves@redhat.com>
+
+	* linux-low.c (step_over_bkpt): Move higher up in the file.
+	(handle_extended_wait): Don't store the stop_pc here.
+	(get_stop_pc): Adjust comments and rename to ...
+	(check_stopped_by_breakpoint): ... this.  Record whether the LWP
+	stopped for a software breakpoint or hardware breakpoint.
+	(thread_still_has_status_pending_p): New function.
+	(status_pending_p_callback): Use
+	thread_still_has_status_pending_p.  If the event is no longer
+	interesting, resume the LWP.
+	(handle_tracepoints): Add assert.
+	(maybe_move_out_of_jump_pad): Remove cancel_breakpoints call.
+	(wstatus_maybe_breakpoint): New function.
+	(cancel_breakpoint): Delete function.
+	(check_stopped_by_watchpoint): New function, factored out from
+	linux_low_filter_event.
+	(lp_status_maybe_breakpoint): Delete function.
+	(linux_low_filter_event): Remove filter_ptid argument.
+	Leave thread group exits pending here.	Store the LWP's stop PC.
+	Always leave events pending.
+	(linux_wait_for_event_filtered): Pull all events out of the
+	kernel, and leave them all pending.
+	(count_events_callback, select_event_lwp_callback): Consider all
+	events.
+	(cancel_breakpoints_callback, linux_cancel_breakpoints): Delete.
+	(select_event_lwp): Only give preference to the stepping LWP in
+	all-stop mode.	Adjust comments.
+	(ignore_event): New function.
+	(linux_wait_1): Delete 'retry' label.  Use ignore_event.  Remove
+	references to cancel_breakpoints.  Adjust to renames.  Also give
+	equal priority to all LWPs that have had events in non-stop mode.
+	If reporting a software breakpoint event, unadjust the LWP's PC.
+	(linux_wait): If linux_wait_1 returned an ignored event, retry.
+	(stuck_in_jump_pad_callback, move_out_of_jump_pad_callback):
+	Adjust.
+	(linux_resume_one_lwp): Store the LWP's PC.  Adjust.
+	(resume_status_pending_p): Use thread_still_has_status_pending_p.
+	(linux_stopped_by_watchpoint): Adjust.
+	(linux_target_ops): Remove reference to linux_cancel_breakpoints.
+	* linux-low.h (enum lwp_stop_reason): New.
+	(struct lwp_info) <stop_pc>: Adjust comment.
+	<stopped_by_watchpoint>: Delete field.
+	<stop_reason>: New field.
+	* linux-x86-low.c (x86_linux_prepare_to_resume): Adjust.
+	* mem-break.c (software_breakpoint_inserted_here)
+	(hardware_breakpoint_inserted_here): New function.
+	* mem-break.h (software_breakpoint_inserted_here)
+	(hardware_breakpoint_inserted_here): Declare.
+	* target.h (struct target_ops) <cancel_breakpoints>: Remove field.
+	(cancel_breakpoints): Delete.
+	* tracepoint.c (clear_installed_tracepoints, stop_tracing)
+	(upload_fast_traceframes): Remove references to
+	cancel_breakpoints.
+
+2015-01-09  Pedro Alves  <palves@redhat.com>
+
+	* thread-db.c (find_new_threads_callback): Ignore thread if the
+	kernel thread ID is -1.
+
+2015-01-09  Pedro Alves  <palves@redhat.com>
+
+	* linux-low.c (linux_attach_fail_reason_string): Move to
+	nat/linux-ptrace.c, and rename.
+	(linux_attach_lwp): Update comment.
+	(attach_proc_task_lwp_callback): New function.
+	(linux_attach): Adjust to rename and use
+	linux_proc_attach_tgid_threads.
+	(linux_attach_fail_reason_string): Delete declaration.
+
+2015-01-01  Joel Brobecker  <brobecker@adacore.com>
+
+	* gdbreplay.c (gdbreplay_version): Update copyright year to 2015.
+	* server.c (gdbserver_version): Likewise.
+
+2014-12-29  Sergio Durigan Junior  <sergiodj@redhat.com>
+
+	* remote-utils.c: Include ctype.h.
+	(input_interrupt): Explicitly handle the case when the char
+	received is the NUL byte.  Improve the printing of non-ASCII
+	characters.
+
+2014-12-16  Joel Brobecker  <brobecker@adacore.com>
+
+	* linux-low.c (linux_low_filter_event): Update call to
+	linux_enable_event_reporting following the addition of
+	a new parameter to that function.
+
+2014-12-16  Catalin Udma  <catalin.udma@freescale.com>
+
+	PR server/17457
+	* linux-aarch64-low.c (AARCH64_FPSR_REGNO): New define.
+	(AARCH64_FPCR_REGNO): Likewise.
+	(AARCH64_NUM_REGS): Update to include fpsr/fpcr registers.
+	(aarch64_fill_fpregset): Add missing fpsr/fpcr registers.
+	(aarch64_store_fpregset): Likewise.
+
+2014-12-15  Joel Brobecker  <brobecker@adacore.com>
+
+	* lynx-low.c (lynx_resume): Use PTRACE_SINGLESTEP_ONE if N == 1.
+	Remove FIXME comment about assumption about N.
+
+2014-12-13  Joel Brobecker  <brobecker@adacore.com>
+
+	* configure.ac: If large-file support is disabled in GDBserver,
+	pass --disable-largefile to ACX_CONFIGURE_DIR call for "gnulib".
+	* configure: Regenerate.
+
+2014-12-12  Andreas Arnez  <arnez@linux.vnet.ibm.com>
+
+	* linux-low.c (regsets_fetch_inferior_registers): Suppress the
+	warning upon ENODATA from ptrace.
+	* linux-s390-low.c (s390_store_tdb): New.
+	(s390_regsets): Add regset for NT_S390_TDB.
+
+2014-12-12  Andreas Arnez  <arnez@linux.vnet.ibm.com>
+
+	* linux-low.c (regsets_store_inferior_registers): Skip regsets
+	without a fill_function.
+	* linux-s390-low.c (s390_fill_last_break): Remove.
+	(s390_regsets): Set fill_function to NULL for NT_S390_LAST_BREAK.
+	(s390_arch_setup): Use regset's size instead of fill_function for
+	loop end condition.
+
+2014-12-12  Andreas Arnez  <arnez@linux.vnet.ibm.com>
+
+	* linux-low.c (regsets_fetch_inferior_registers): Do not invoke
+	the regset's store function when ptrace returned an error.
+	* regcache.c (get_thread_regcache): Invalidate register cache
+	before fetching inferior's registers.
+
+2014-12-12  Andreas Arnez  <arnez@linux.vnet.ibm.com>
+
+	* linux-low.c (regsets_fetch_inferior_registers): Rephrase
+	while-loop as for-loop.
+	(regsets_store_inferior_registers): Likewise.
+
+2014-11-28  Yao Qi  <yao@codesourcery.com>
+
+	* configure.ac(AC_CHECK_FUNCS): Remove readlink.
+	* config.in, configure: Re-generate.
+	* hostio.c (handle_unlink): Remove code checking HAVE_READLINK
+	is defined.
+
+2014-11-21  Yao Qi  <yao@codesourcery.com>
+
+	* configure.ac: Don't invoke AC_FUNC_ALLOCA.
+	(AC_CHECK_HEADERS): Remove malloc.h.
+	* configure: Re-generated.
+	* config.in: Re-generated.
+	* server.h: Don't include alloca.h and malloc.h.
+	* gdbreplay.c: Don't check HAVE_ALLOCA_H is defined.
+	Don't include malloc.h.
+
+2014-11-17  Joel Brobecker  <brobecker@adacore.com>
+
+	* lynx-low.c (lynx_write_memory): Put lynx_read_memory and
+	corresponding ERRNO check in same block.
+
+2014-11-12  Pedro Alves  <palves@redhat.com>
+
+	* server.c (cont_thread): Update comment.
+	(start_inferior, attach_inferior): No longer clear cont_thread.
+	(handle_v_cont): No longer set cont_thread.
+	(captured_main): Clear cont_thread each time a GDB connects.
+
+2014-11-12  Pedro Alves  <palves@redhat.com>
+
+	* linux-low.c (linux_wait_1): Don't force a wait for the Hc
+	thread, and don't resume all threads if the Hc thread has exited.
+
+2014-11-12  Pedro Alves  <palves@redhat.com>
+
+	* linux-low.c (linux_request_interrupt): Always send a SIGINT to
+	the process group instead of to a specific LWP.
+
 2014-10-15  Pedro Alves  <palves@redhat.com>
 
 	PR server/17487

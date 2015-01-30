@@ -1,6 +1,6 @@
 /* Everything about breakpoints, for GDB.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -66,7 +66,7 @@
 #include "skip.h"
 #include "ax-gdb.h"
 #include "dummy-frame.h"
-
+#include "interps.h"
 #include "format.h"
 
 /* readline include files */
@@ -3220,10 +3220,7 @@ remove_breakpoints_pid (int pid)
     if (bl->pspace != inf->pspace)
       continue;
 
-    if (bl->owner->type == bp_dprintf)
-      continue;
-
-    if (bl->inserted)
+    if (bl->inserted && !bl->target_info.persist)
       {
 	val = remove_breakpoint (bl, mark_uninserted);
 	if (val != 0)
@@ -3883,7 +3880,7 @@ remove_breakpoint_1 (struct bp_location *bl, insertion_state_t is)
   /* BL is never in moribund_locations by our callers.  */
   gdb_assert (bl->owner != NULL);
 
-  if (bl->owner->enable_state == bp_permanent)
+  if (bl->permanent)
     /* Permanent breakpoints cannot be inserted or removed.  */
     return 0;
 
@@ -4033,7 +4030,7 @@ remove_breakpoint (struct bp_location *bl, insertion_state_t is)
   /* BL is never in moribund_locations by our callers.  */
   gdb_assert (bl->owner != NULL);
 
-  if (bl->owner->enable_state == bp_permanent)
+  if (bl->permanent)
     /* Permanent breakpoints cannot be inserted or removed.  */
     return 0;
 
@@ -4059,7 +4056,8 @@ mark_breakpoints_out (void)
   struct bp_location *bl, **blp_tmp;
 
   ALL_BP_LOCATIONS (bl, blp_tmp)
-    if (bl->pspace == current_program_space)
+    if (bl->pspace == current_program_space
+	&& !bl->permanent)
       bl->inserted = 0;
 }
 
@@ -4088,13 +4086,7 @@ breakpoint_init_inferior (enum inf_context context)
   if (gdbarch_has_global_breakpoints (target_gdbarch ()))
     return;
 
-  ALL_BP_LOCATIONS (bl, blp_tmp)
-  {
-    /* ALL_BP_LOCATIONS bp_location has BL->OWNER always non-NULL.  */
-    if (bl->pspace == pspace
-	&& bl->owner->enable_state != bp_permanent)
-      bl->inserted = 0;
-  }
+  mark_breakpoints_out ();
 
   ALL_BREAKPOINTS_SAFE (b, b_tmp)
   {
@@ -4202,14 +4194,14 @@ breakpoint_here_p (struct address_space *aspace, CORE_ADDR pc)
 
       /* ALL_BP_LOCATIONS bp_location has BL->OWNER always non-NULL.  */
       if ((breakpoint_enabled (bl->owner)
-	   || bl->owner->enable_state == bp_permanent)
+	   || bl->permanent)
 	  && breakpoint_location_address_match (bl, aspace, pc))
 	{
 	  if (overlay_debugging 
 	      && section_is_overlay (bl->section)
 	      && !section_is_mapped (bl->section))
 	    continue;		/* unmapped overlay -- can't be a match */
-	  else if (bl->owner->enable_state == bp_permanent)
+	  else if (bl->permanent)
 	    return permanent_breakpoint_here;
 	  else
 	    any_breakpoint_here = 1;
@@ -4234,29 +4226,45 @@ moribund_breakpoint_here_p (struct address_space *aspace, CORE_ADDR pc)
   return 0;
 }
 
+/* Returns non-zero iff BL is inserted at PC, in address space
+   ASPACE.  */
+
+static int
+bp_location_inserted_here_p (struct bp_location *bl,
+			     struct address_space *aspace, CORE_ADDR pc)
+{
+  if (bl->inserted
+      && breakpoint_address_match (bl->pspace->aspace, bl->address,
+				   aspace, pc))
+    {
+      if (overlay_debugging
+	  && section_is_overlay (bl->section)
+	  && !section_is_mapped (bl->section))
+	return 0;		/* unmapped overlay -- can't be a match */
+      else
+	return 1;
+    }
+  return 0;
+}
+
 /* Returns non-zero iff there's a breakpoint inserted at PC.  */
 
 int
 breakpoint_inserted_here_p (struct address_space *aspace, CORE_ADDR pc)
 {
-  struct bp_location *bl, **blp_tmp;
+  struct bp_location **blp, **blp_tmp = NULL;
+  struct bp_location *bl;
 
-  ALL_BP_LOCATIONS (bl, blp_tmp)
+  ALL_BP_LOCATIONS_AT_ADDR (blp, blp_tmp, pc)
     {
+      struct bp_location *bl = *blp;
+
       if (bl->loc_type != bp_loc_software_breakpoint
 	  && bl->loc_type != bp_loc_hardware_breakpoint)
 	continue;
 
-      if (bl->inserted
-	  && breakpoint_location_address_match (bl, aspace, pc))
-	{
-	  if (overlay_debugging 
-	      && section_is_overlay (bl->section)
-	      && !section_is_mapped (bl->section))
-	    continue;		/* unmapped overlay -- can't be a match */
-	  else
-	    return 1;
-	}
+      if (bp_location_inserted_here_p (bl, aspace, pc))
+	return 1;
     }
   return 0;
 }
@@ -4268,24 +4276,41 @@ int
 software_breakpoint_inserted_here_p (struct address_space *aspace,
 				     CORE_ADDR pc)
 {
-  struct bp_location *bl, **blp_tmp;
+  struct bp_location **blp, **blp_tmp = NULL;
+  struct bp_location *bl;
 
-  ALL_BP_LOCATIONS (bl, blp_tmp)
+  ALL_BP_LOCATIONS_AT_ADDR (blp, blp_tmp, pc)
     {
+      struct bp_location *bl = *blp;
+
       if (bl->loc_type != bp_loc_software_breakpoint)
 	continue;
 
-      if (bl->inserted
-	  && breakpoint_address_match (bl->pspace->aspace, bl->address,
-				       aspace, pc))
-	{
-	  if (overlay_debugging 
-	      && section_is_overlay (bl->section)
-	      && !section_is_mapped (bl->section))
-	    continue;		/* unmapped overlay -- can't be a match */
-	  else
-	    return 1;
-	}
+      if (bp_location_inserted_here_p (bl, aspace, pc))
+	return 1;
+    }
+
+  return 0;
+}
+
+/* See breakpoint.h.  */
+
+int
+hardware_breakpoint_inserted_here_p (struct address_space *aspace,
+				     CORE_ADDR pc)
+{
+  struct bp_location **blp, **blp_tmp = NULL;
+  struct bp_location *bl;
+
+  ALL_BP_LOCATIONS_AT_ADDR (blp, blp_tmp, pc)
+    {
+      struct bp_location *bl = *blp;
+
+      if (bl->loc_type != bp_loc_hardware_breakpoint)
+	continue;
+
+      if (bp_location_inserted_here_p (bl, aspace, pc))
+	return 1;
     }
 
   return 0;
@@ -4320,65 +4345,6 @@ hardware_watchpoint_inserted_in_range (struct address_space *aspace,
 	      return 1;
 	  }
     }
-  return 0;
-}
-
-/* breakpoint_thread_match (PC, PTID) returns true if the breakpoint at
-   PC is valid for process/thread PTID.  */
-
-int
-breakpoint_thread_match (struct address_space *aspace, CORE_ADDR pc,
-			 ptid_t ptid)
-{
-  struct bp_location *bl, **blp_tmp;
-  /* The thread and task IDs associated to PTID, computed lazily.  */
-  int thread = -1;
-  int task = 0;
-  
-  ALL_BP_LOCATIONS (bl, blp_tmp)
-    {
-      if (bl->loc_type != bp_loc_software_breakpoint
-	  && bl->loc_type != bp_loc_hardware_breakpoint)
-	continue;
-
-      /* ALL_BP_LOCATIONS bp_location has bl->OWNER always non-NULL.  */
-      if (!breakpoint_enabled (bl->owner)
-	  && bl->owner->enable_state != bp_permanent)
-	continue;
-
-      if (!breakpoint_location_address_match (bl, aspace, pc))
-	continue;
-
-      if (bl->owner->thread != -1)
-	{
-	  /* This is a thread-specific breakpoint.  Check that ptid
-	     matches that thread.  If thread hasn't been computed yet,
-	     it is now time to do so.  */
-	  if (thread == -1)
-	    thread = pid_to_thread_id (ptid);
-	  if (bl->owner->thread != thread)
-	    continue;
-	}
-
-      if (bl->owner->task != 0)
-        {
-	  /* This is a task-specific breakpoint.  Check that ptid
-	     matches that task.  If task hasn't been computed yet,
-	     it is now time to do so.  */
-	  if (task == 0)
-	    task = ada_get_task_number (ptid);
-	  if (bl->owner->task != task)
-	    continue;
-        }
-
-      if (overlay_debugging 
-	  && section_is_overlay (bl->section)
-	  && !section_is_mapped (bl->section))
-	continue;	    /* unmapped overlay -- can't be a match */
-
-      return 1;
-    }
-
   return 0;
 }
 
@@ -4669,7 +4635,7 @@ bpstat_do_actions_1 (bpstat *bsp)
 
       if (breakpoint_proceeded)
 	{
-	  if (target_can_async_p ())
+	  if (interpreter_async && target_can_async_p ())
 	    /* If we are in async mode, then the target might be still
 	       running, not stopped at any breakpoint, so nothing for
 	       us to do here -- just return to the event loop.  */
@@ -5534,7 +5500,7 @@ bpstat_stop_status (struct address_space *aspace,
 
   ALL_BREAKPOINTS (b)
     {
-      if (!breakpoint_enabled (b) && b->enable_state != bp_permanent)
+      if (!breakpoint_enabled (b))
 	continue;
 
       for (bl = b->loc; bl != NULL; bl = bl->next)
@@ -5630,8 +5596,7 @@ bpstat_stop_status (struct address_space *aspace,
 	      if (b->disposition == disp_disable)
 		{
 		  --(b->enable_count);
-		  if (b->enable_count <= 0
-		      && b->enable_state != bp_permanent)
+		  if (b->enable_count <= 0)
 		    b->enable_state = bp_disabled;
 		  removed_any = 1;
 		}
@@ -6915,8 +6880,6 @@ describe_other_breakpoints (struct gdbarch *gdbarch,
 			     ((b->enable_state == bp_disabled
 			       || b->enable_state == bp_call_disabled)
 			      ? " (disabled)"
-			      : b->enable_state == bp_permanent 
-			      ? " (permanent)"
 			      : ""),
 			     (others > 1) ? "," 
 			     : ((others == 1) ? " and" : ""));
@@ -7381,7 +7344,7 @@ get_sal_arch (struct symtab_and_line sal)
   if (sal.section)
     return get_objfile_arch (sal.section->objfile);
   if (sal.symtab)
-    return get_objfile_arch (sal.symtab->objfile);
+    return get_objfile_arch (SYMTAB_OBJFILE (sal.symtab));
 
   return NULL;
 }
@@ -7448,15 +7411,16 @@ make_breakpoint_permanent (struct breakpoint *b)
 {
   struct bp_location *bl;
 
-  b->enable_state = bp_permanent;
-
   /* By definition, permanent breakpoints are already present in the
      code.  Mark all locations as inserted.  For now,
      make_breakpoint_permanent is called in just one place, so it's
      hard to say if it's reasonable to have permanent breakpoint with
      multiple locations or not, but it's easy to implement.  */
   for (bl = b->loc; bl; bl = bl->next)
-    bl->inserted = 1;
+    {
+      bl->permanent = 1;
+      bl->inserted = 1;
+    }
 }
 
 /* Call this routine when stepping and nexting to enable a breakpoint
@@ -8673,10 +8637,11 @@ print_it_catch_syscall (bpstat bs)
   ptid_t ptid;
   struct target_waitstatus last;
   struct syscall s;
+  struct gdbarch *gdbarch = bs->bp_location_at->gdbarch;
 
   get_last_target_status (&ptid, &last);
 
-  get_syscall_by_number (last.value.syscall_number, &s);
+  get_syscall_by_number (gdbarch, last.value.syscall_number, &s);
 
   annotate_catchpoint (b->number);
 
@@ -8719,6 +8684,7 @@ print_one_catch_syscall (struct breakpoint *b,
   struct syscall_catchpoint *c = (struct syscall_catchpoint *) b;
   struct value_print_options opts;
   struct ui_out *uiout = current_uiout;
+  struct gdbarch *gdbarch = b->loc->gdbarch;
 
   get_user_print_options (&opts);
   /* Field 4, the address, is omitted (which makes the columns not
@@ -8745,7 +8711,7 @@ print_one_catch_syscall (struct breakpoint *b,
         {
           char *x = text;
           struct syscall s;
-          get_syscall_by_number (iter, &s);
+          get_syscall_by_number (gdbarch, iter, &s);
 
           if (s.name != NULL)
             text = xstrprintf ("%s%s, ", text, s.name);
@@ -8776,6 +8742,7 @@ static void
 print_mention_catch_syscall (struct breakpoint *b)
 {
   struct syscall_catchpoint *c = (struct syscall_catchpoint *) b;
+  struct gdbarch *gdbarch = b->loc->gdbarch;
 
   if (c->syscalls_to_be_caught)
     {
@@ -8791,7 +8758,7 @@ print_mention_catch_syscall (struct breakpoint *b)
            i++)
         {
           struct syscall s;
-          get_syscall_by_number (iter, &s);
+          get_syscall_by_number (gdbarch, iter, &s);
 
           if (s.name)
             printf_filtered (" '%s' [%d]", s.name, s.number);
@@ -8812,6 +8779,7 @@ static void
 print_recreate_catch_syscall (struct breakpoint *b, struct ui_file *fp)
 {
   struct syscall_catchpoint *c = (struct syscall_catchpoint *) b;
+  struct gdbarch *gdbarch = b->loc->gdbarch;
 
   fprintf_unfiltered (fp, "catch syscall");
 
@@ -8825,7 +8793,7 @@ print_recreate_catch_syscall (struct breakpoint *b, struct ui_file *fp)
         {
           struct syscall s;
 
-          get_syscall_by_number (iter, &s);
+          get_syscall_by_number (gdbarch, iter, &s);
           if (s.name)
             fprintf_unfiltered (fp, " %s", s.name);
           else
@@ -9286,6 +9254,8 @@ mention (struct breakpoint *b)
 }
 
 
+static int bp_loc_is_permanent (struct bp_location *loc);
+
 static struct bp_location *
 add_location_to_breakpoint (struct breakpoint *b,
 			    const struct symtab_and_line *sal)
@@ -9327,6 +9297,13 @@ add_location_to_breakpoint (struct breakpoint *b,
 
   set_breakpoint_location_function (loc,
 				    sal->explicit_pc || sal->explicit_line);
+
+  if (bp_loc_is_permanent (loc))
+    {
+      loc->inserted = 1;
+      loc->permanent = 1;
+    }
+
   return loc;
 }
 
@@ -9345,6 +9322,20 @@ bp_loc_is_permanent (struct bp_location *loc)
   int retval = 0;
 
   gdb_assert (loc != NULL);
+
+  /* bp_call_dummy breakpoint locations are usually memory locations
+     where GDB just wrote a breakpoint instruction, making it look
+     as if there is a permanent breakpoint at that location.  Considering
+     it permanent makes GDB rely on that breakpoint instruction to stop
+     the program, thus removing the need to insert its own breakpoint
+     there.  This is normally expected to work, except that some versions
+     of QEMU (Eg: QEMU 2.0.0 for SPARC) just report a fatal problem (Trap
+     0x02 while interrupts disabled, Error state) instead of reporting
+     a SIGTRAP.  QEMU should probably be fixed, but in the interest of
+     compatibility with versions that behave this way, we always consider
+     bp_call_dummy breakpoint locations as non-permanent.  */
+  if (loc->owner->type == bp_call_dummy)
+    return 0;
 
   addr = loc->address;
   bpoint = gdbarch_breakpoint_from_pc (loc->gdbarch, &addr, &len);
@@ -9568,9 +9559,6 @@ init_breakpoint_sal (struct breakpoint *b, struct gdbarch *gdbarch,
 	  if ((flags & CREATE_BREAKPOINT_FLAGS_INSERTED) != 0)
 	    loc->inserted = 1;
 	}
-
-      if (bp_loc_is_permanent (loc))
-	make_breakpoint_permanent (b);
 
       if (b->cond_string)
 	{
@@ -10264,14 +10252,16 @@ resolve_sal_pc (struct symtab_and_line *sal)
       const struct block *b;
       struct symbol *sym;
 
-      bv = blockvector_for_pc_sect (sal->pc, 0, &b, sal->symtab);
+      bv = blockvector_for_pc_sect (sal->pc, 0, &b,
+				    SYMTAB_COMPUNIT (sal->symtab));
       if (bv != NULL)
 	{
 	  sym = block_linkage_function (b);
 	  if (sym != NULL)
 	    {
-	      fixup_symbol_section (sym, sal->symtab->objfile);
-	      sal->section = SYMBOL_OBJ_SECTION (sal->symtab->objfile, sym);
+	      fixup_symbol_section (sym, SYMTAB_OBJFILE (sal->symtab));
+	      sal->section = SYMBOL_OBJ_SECTION (SYMTAB_OBJFILE (sal->symtab),
+						 sym);
 	    }
 	  else
 	    {
@@ -12095,6 +12085,7 @@ catch_syscall_split_args (char *arg)
 {
   VEC(int) *result = NULL;
   struct cleanup *cleanup = make_cleanup (VEC_cleanup (int), &result);
+  struct gdbarch *gdbarch = target_gdbarch ();
 
   while (*arg != '\0')
     {
@@ -12114,12 +12105,12 @@ catch_syscall_split_args (char *arg)
       /* Check if the user provided a syscall name or a number.  */
       syscall_number = (int) strtol (cur_name, &endptr, 0);
       if (*endptr == '\0')
-	get_syscall_by_number (syscall_number, &s);
+	get_syscall_by_number (gdbarch, syscall_number, &s);
       else
 	{
 	  /* We have a name.  Let's check if it's valid and convert it
 	     to a number.  */
-	  get_syscall_by_name (cur_name, &s);
+	  get_syscall_by_name (gdbarch, cur_name, &s);
 
 	  if (s.number == UNKNOWN_SYSCALL)
 	    /* Here we have to issue an error instead of a warning,
@@ -12160,7 +12151,7 @@ this architecture yet."));
      to get the syscall XML file loaded or, most important,
      to display a warning to the user if there's no XML file
      for his/her architecture.  */
-  get_syscall_by_number (0, &s);
+  get_syscall_by_number (gdbarch, 0, &s);
 
   /* The allowed syntax is:
      catch syscall
@@ -12411,7 +12402,7 @@ breakpoint_auto_delete (bpstat bs)
 /* A comparison function for bp_location AP and BP being interfaced to
    qsort.  Sort elements primarily by their ADDRESS (no matter what
    does breakpoint_address_is_meaningful say for its OWNER),
-   secondarily by ordering first bp_permanent OWNERed elements and
+   secondarily by ordering first permanent elements and
    terciarily just ensuring the array is sorted stable way despite
    qsort being an unstable algorithm.  */
 
@@ -12420,9 +12411,6 @@ bp_location_compare (const void *ap, const void *bp)
 {
   struct bp_location *a = *(void **) ap;
   struct bp_location *b = *(void **) bp;
-  /* A and B come from existing breakpoints having non-NULL OWNER.  */
-  int a_perm = a->owner->enable_state == bp_permanent;
-  int b_perm = b->owner->enable_state == bp_permanent;
 
   if (a->address != b->address)
     return (a->address > b->address) - (a->address < b->address);
@@ -12436,8 +12424,8 @@ bp_location_compare (const void *ap, const void *bp)
 	    - (a->pspace->num < b->pspace->num));
 
   /* Sort permanent breakpoints first.  */
-  if (a_perm != b_perm)
-    return (a_perm < b_perm) - (a_perm > b_perm);
+  if (a->permanent != b->permanent)
+    return (a->permanent < b->permanent) - (a->permanent > b->permanent);
 
   /* Make the internal GDB representation stable across GDB runs
      where A and B memory inside GDB can differ.  Breakpoint locations of
@@ -12908,7 +12896,7 @@ update_global_location_list (enum ugll_insert_mode insert_mode)
 	}
 
       /* Permanent breakpoint should always be inserted.  */
-      if (b->enable_state == bp_permanent && ! loc->inserted)
+      if (loc->permanent && ! loc->inserted)
 	internal_error (__FILE__, __LINE__,
 			_("allegedly permanent breakpoint is not "
 			"actually inserted"));
@@ -12949,8 +12937,8 @@ update_global_location_list (enum ugll_insert_mode insert_mode)
       /* Clear the condition modification flag.  */
       loc->condition_changed = condition_unchanged;
 
-      if ((*loc_first_p)->owner->enable_state == bp_permanent && loc->inserted
-	  && b->enable_state != bp_permanent)
+      if (loc->inserted && !loc->permanent
+	  && (*loc_first_p)->permanent)
 	internal_error (__FILE__, __LINE__,
 			_("another breakpoint was inserted on top of "
 			"a permanent breakpoint"));
@@ -14496,10 +14484,6 @@ update_breakpoint_locations (struct breakpoint *b,
 	}
     }
 
-  /* Update locations of permanent breakpoints.  */
-  if (b->enable_state == bp_permanent)
-    make_breakpoint_permanent (b);
-
   /* If possible, carry over 'disable' status from existing
      breakpoints.  */
   {
@@ -14982,10 +14966,6 @@ disable_breakpoint (struct breakpoint *bpt)
   if (bpt->type == bp_watchpoint_scope)
     return;
 
-  /* You can't disable permanent breakpoints.  */
-  if (bpt->enable_state == bp_permanent)
-    return;
-
   bpt->enable_state = bp_disabled;
 
   /* Mark breakpoint locations modified.  */
@@ -15105,9 +15085,6 @@ enable_breakpoint_disp (struct breakpoint *bpt, enum bpdisp disposition,
 	  return;
 	}
     }
-
-  if (bpt->enable_state != bp_permanent)
-    bpt->enable_state = bp_enabled;
 
   bpt->enable_state = bp_enabled;
 
@@ -15417,7 +15394,7 @@ static VEC (char_ptr) *
 catch_syscall_completer (struct cmd_list_element *cmd,
                          const char *text, const char *word)
 {
-  const char **list = get_syscall_names ();
+  const char **list = get_syscall_names (get_current_arch ());
   VEC (char_ptr) *retlist
     = (list == NULL) ? NULL : complete_on_enum (list, word, word);
 
@@ -16124,7 +16101,7 @@ breakpoint_free_objfile (struct objfile *objfile)
   struct bp_location **locp, *loc;
 
   ALL_BP_LOCATIONS (loc, locp)
-    if (loc->symtab != NULL && loc->symtab->objfile == objfile)
+    if (loc->symtab != NULL && SYMTAB_OBJFILE (loc->symtab) == objfile)
       loc->symtab = NULL;
 }
 

@@ -1,6 +1,6 @@
 // plugin.cc -- plugin manager for gold      -*- C++ -*-
 
-// Copyright (C) 2008-2014 Free Software Foundation, Inc.
+// Copyright (C) 2008-2015 Free Software Foundation, Inc.
 // Written by Cary Coutant <ccoutant@google.com>.
 
 // This file is part of gold.
@@ -427,6 +427,7 @@ Plugin_manager::~Plugin_manager()
        ++obj)
     delete *obj;
   this->objects_.clear();
+  delete this->lock_;
 }
 
 // Load all plugin libraries.
@@ -447,6 +448,10 @@ Pluginobj*
 Plugin_manager::claim_file(Input_file* input_file, off_t offset,
                            off_t filesize, Object* elf_object)
 {
+  bool lock_initialized = this->initialize_lock_.initialize();
+
+  gold_assert(lock_initialized);
+  Hold_lock hl(*this->lock_);
   if (this->in_replacement_phase_)
     return NULL;
 

@@ -1,6 +1,6 @@
 /* GDB routines for manipulating objfiles.
 
-   Copyright (C) 1992-2014 Free Software Foundation, Inc.
+   Copyright (C) 1992-2015 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support, using pieces from other GDB modules.
 
@@ -314,10 +314,6 @@ allocate_objfile (bfd *abfd, const char *name, int flags)
      that any data that is reference is saved in the per-objfile data
      region.  */
 
-  /* Update the per-objfile information that comes from the bfd, ensuring
-     that any data that is reference is saved in the per-objfile data
-     region.  */
-
   objfile->obfd = abfd;
   gdb_bfd_ref (abfd);
   if (abfd != NULL)
@@ -366,8 +362,9 @@ allocate_objfile (bfd *abfd, const char *name, int flags)
 }
 
 /* Retrieve the gdbarch associated with OBJFILE.  */
+
 struct gdbarch *
-get_objfile_arch (struct objfile *objfile)
+get_objfile_arch (const struct objfile *objfile)
 {
   return objfile->per_bfd->gdbarch;
 }
@@ -640,7 +637,7 @@ free_objfile (struct objfile *objfile)
   {
     struct symtab_and_line cursal = get_current_source_symtab_and_line ();
 
-    if (cursal.symtab && cursal.symtab->objfile == objfile)
+    if (cursal.symtab && SYMTAB_OBJFILE (cursal.symtab) == objfile)
       clear_current_source_symtab_and_line ();
   }
 
@@ -739,30 +736,33 @@ objfile_relocate1 (struct objfile *objfile,
 
   /* OK, get all the symtabs.  */
   {
+    struct compunit_symtab *cust;
     struct symtab *s;
 
-    ALL_OBJFILE_SYMTABS (objfile, s)
+    ALL_OBJFILE_FILETABS (objfile, cust, s)
     {
       struct linetable *l;
-      const struct blockvector *bv;
       int i;
 
       /* First the line table.  */
-      l = LINETABLE (s);
+      l = SYMTAB_LINETABLE (s);
       if (l)
 	{
 	  for (i = 0; i < l->nitems; ++i)
-	    l->item[i].pc += ANOFFSET (delta, s->block_line_section);
+	    l->item[i].pc += ANOFFSET (delta,
+				       COMPUNIT_BLOCK_LINE_SECTION
+					 (cust));
 	}
+    }
 
-      /* Don't relocate a shared blockvector more than once.  */
-      if (!s->primary)
-	continue;
+    ALL_OBJFILE_COMPUNITS (objfile, cust)
+    {
+      const struct blockvector *bv = COMPUNIT_BLOCKVECTOR (cust);
+      int block_line_section = COMPUNIT_BLOCK_LINE_SECTION (cust);
 
-      bv = BLOCKVECTOR (s);
       if (BLOCKVECTOR_MAP (bv))
 	addrmap_relocate (BLOCKVECTOR_MAP (bv),
-			  ANOFFSET (delta, s->block_line_section));
+			  ANOFFSET (delta, block_line_section));
 
       for (i = 0; i < BLOCKVECTOR_NBLOCKS (bv); ++i)
 	{
@@ -771,8 +771,8 @@ objfile_relocate1 (struct objfile *objfile,
 	  struct dict_iterator iter;
 
 	  b = BLOCKVECTOR_BLOCK (bv, i);
-	  BLOCK_START (b) += ANOFFSET (delta, s->block_line_section);
-	  BLOCK_END (b) += ANOFFSET (delta, s->block_line_section);
+	  BLOCK_START (b) += ANOFFSET (delta, block_line_section);
+	  BLOCK_END (b) += ANOFFSET (delta, block_line_section);
 
 	  /* We only want to iterate over the local symbols, not any
 	     symbols in included symtabs.  */
@@ -938,7 +938,7 @@ objfile_has_partial_symbols (struct objfile *objfile)
 int
 objfile_has_full_symbols (struct objfile *objfile)
 {
-  return objfile->symtabs != NULL;
+  return objfile->compunit_symtabs != NULL;
 }
 
 /* Return non-zero if OBJFILE has full or partial symbols, either directly
@@ -1492,7 +1492,7 @@ default_iterate_over_objfiles_in_search_order
     }
 }
 
-/* Return canonical name for OBJFILE.  */
+/* See objfiles.h.  */
 
 const char *
 objfile_name (const struct objfile *objfile)
@@ -1501,6 +1501,25 @@ objfile_name (const struct objfile *objfile)
     return bfd_get_filename (objfile->obfd);
 
   return objfile->original_name;
+}
+
+/* See objfiles.h.  */
+
+const char *
+objfile_filename (const struct objfile *objfile)
+{
+  if (objfile->obfd != NULL)
+    return bfd_get_filename (objfile->obfd);
+
+  return NULL;
+}
+
+/* See objfiles.h.  */
+
+const char *
+objfile_debug_name (const struct objfile *objfile)
+{
+  return lbasename (objfile->original_name);
 }
 
 /* Provide a prototype to silence -Wmissing-prototypes.  */

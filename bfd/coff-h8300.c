@@ -1,5 +1,5 @@
 /* BFD back-end for Renesas H8/300 COFF binaries.
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
    Written by Steve Chamberlain, <sac@cygnus.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -337,7 +337,7 @@ rtype2howto (arelent *internal, struct internal_reloc *dst)
       internal->howto = howto_table + 19;
       break;
     default:
-      abort ();
+      internal->howto = NULL;
       break;
     }
 }

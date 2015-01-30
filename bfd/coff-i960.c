@@ -1,5 +1,5 @@
 /* BFD back-end for Intel 960 COFF files.
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -62,22 +62,22 @@ coff_i960_is_local_label_name (bfd *abfd ATTRIBUTE_UNUSED, const char *name)
 /* This is just like the usual CALC_ADDEND, but it includes the
    section VMA for PC relative relocs.  */
 #ifndef CALC_ADDEND
-#define CALC_ADDEND(abfd, ptr, reloc, cache_ptr)                \
-  {                                                             \
-    coff_symbol_type *coffsym = (coff_symbol_type *) NULL;      \
-    if (ptr && bfd_asymbol_bfd (ptr) != abfd)                   \
-      coffsym = (obj_symbols (abfd)                             \
-                 + (cache_ptr->sym_ptr_ptr - symbols));         \
-    else if (ptr)                                               \
-      coffsym = coff_symbol_from (abfd, ptr);                   \
-    if (coffsym != (coff_symbol_type *) NULL                    \
-        && coffsym->native->u.syment.n_scnum == 0)              \
-      cache_ptr->addend = 0;                                    \
-    else if (ptr && bfd_asymbol_bfd (ptr) == abfd               \
-             && ptr->section != (asection *) NULL)              \
-      cache_ptr->addend = - (ptr->section->vma + ptr->value);   \
-    else                                                        \
-      cache_ptr->addend = 0;                                    \
+#define CALC_ADDEND(abfd, ptr, reloc, cache_ptr)		\
+  {								\
+    coff_symbol_type *coffsym = (coff_symbol_type *) NULL;	\
+    if (ptr && bfd_asymbol_bfd (ptr) != abfd)			\
+      coffsym = (obj_symbols (abfd)				\
+		 + (cache_ptr->sym_ptr_ptr - symbols));		\
+    else if (ptr)						\
+      coffsym = coff_symbol_from (ptr);				\
+    if (coffsym != (coff_symbol_type *) NULL			\
+	&& coffsym->native->u.syment.n_scnum == 0)		\
+      cache_ptr->addend = 0;					\
+    else if (ptr && bfd_asymbol_bfd (ptr) == abfd		\
+	     && ptr->section != (asection *) NULL)		\
+      cache_ptr->addend = - (ptr->section->vma + ptr->value);	\
+    else							\
+      cache_ptr->addend = 0;					\
     if (ptr && (reloc.r_type == 25 || reloc.r_type == 27))	\
       cache_ptr->addend += asect->vma;				\
   }

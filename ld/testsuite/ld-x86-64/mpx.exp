@@ -1,5 +1,5 @@
 # Expect script for ELF MPX tests.
-#   Copyright (C) 2013-2014 Free Software Foundation, Inc.
+#   Copyright (C) 2013-2015 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -72,6 +72,21 @@ set run_tests {
     {"Run mpx2 with -static"
      "tmpdir/mpx2a.o tmpdir/mpx2b.o tmpdir/mpx2c.o -static" ""
      {dummy.s} "mpx2static" "mpx2.out"}
+}
+
+run_ld_link_tests {
+    {"Build libcall.so"
+     "-m elf_x86_64 -shared -z bndplt" "" "--64"
+     {mpx3b.s} {} "libcall.so"}
+    {"Build mpx3"
+     "-m elf_x86_64 -z bndplt tmpdir/libcall.so" "" "--64"
+     {mpx3a.s} {{objdump -dw mpx3.dd}} "mpx3"}
+    {"Build libcall1.so"
+     "-m elf_x86_64 -shared -z bndplt" "" "--64"
+     {mpx4b.s} {} "libcall1.so"}
+    {"Build mpx4"
+     "-m elf_x86_64 -z bndplt tmpdir/libcall1.so" "" "--64"
+     {mpx4a.s} {{objdump -dw mpx4.dd}} "mpx4"}
 }
 
 run_ld_link_exec_tests [] $run_tests

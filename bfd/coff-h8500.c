@@ -1,5 +1,5 @@
 /* BFD back-end for Renesas H8/500 COFF binaries.
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
    Written by Steve Chamberlain, <sac@cygnus.com>.
 
@@ -95,7 +95,7 @@ rtype2howto (arelent * internal, struct internal_reloc *dst)
   switch (dst->r_type)
     {
     default:
-      abort ();
+      internal->howto = NULL;
       break;
     case R_H8500_IMM8:
       internal->howto = &r_imm8;

@@ -1,4 +1,4 @@
-# Copyright 1992-2014 Free Software Foundation, Inc.
+# Copyright 1992-2015 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -1444,14 +1444,15 @@ proc default_gdb_spawn { } {
 	perror "Spawning $GDB failed."
 	return 1
     }
-    set gdb_spawn_id -1
+
+    set gdb_spawn_id $res
     return 0
 }
 
 # Default gdb_start procedure.
 
 proc default_gdb_start { } {
-    global gdb_prompt
+    global gdb_prompt pagination_prompt
     global gdb_spawn_id
 
     if [info exists gdb_spawn_id] {
@@ -1466,20 +1467,29 @@ proc default_gdb_start { } {
     # When running over NFS, particularly if running many simultaneous
     # tests on different hosts all using the same server, things can
     # get really slow.  Give gdb at least 3 minutes to start up.
-    gdb_expect 360 {
-	-re "\[\r\n\]$gdb_prompt $" {
-	    verbose "GDB initialized."
-	}
-	-re "$gdb_prompt $"	{
-	    perror "GDB never initialized."
-	    unset gdb_spawn_id
-	    return -1
-	}
-	timeout	{
-	    perror "(timeout) GDB never initialized after 10 seconds."
-	    remote_close host
-	    unset gdb_spawn_id
-	    return -1
+    set loop_again 1
+    while { $loop_again } {
+	set loop_again 0
+	gdb_expect 360 {
+	    -re "$pagination_prompt" {
+		verbose "Hit pagination during startup. Pressing enter to continue."
+		send_gdb "\n"
+		set loop_again 1
+	    }
+	    -re "\[\r\n\]$gdb_prompt $" {
+		verbose "GDB initialized."
+	    }
+	    -re "$gdb_prompt $"	{
+		perror "GDB never initialized."
+		unset gdb_spawn_id
+		return -1
+	    }
+	    timeout	{
+		perror "(timeout) GDB never initialized after 10 seconds."
+		remote_close host
+		unset gdb_spawn_id
+		return -1
+	    }
 	}
     }
 
@@ -1505,6 +1515,24 @@ proc default_gdb_start { } {
 	}
     }
     return 0
+}
+
+# Utility procedure to give user control of the gdb prompt in a script. It is
+# meant to be used for debugging test cases, and should not be left in the
+# test cases code.
+
+proc gdb_interact { } {
+    global gdb_spawn_id
+    set spawn_id $gdb_spawn_id
+
+    send_user "+------------------------------------------+\n"
+    send_user "| Script interrupted, you can now interact |\n"
+    send_user "| with by gdb. Type >>> to continue.       |\n"
+    send_user "+------------------------------------------+\n"
+
+    interact {
+	">>>" return
+    }
 }
 
 # Examine the output of compilation to determine whether compilation
@@ -1881,7 +1909,8 @@ proc supports_process_record {} {
     }
 
     if { [istarget "arm*-*-linux*"] || [istarget "x86_64-*-linux*"]
-         || [istarget "i\[34567\]86-*-linux*"] } {
+         || [istarget "i\[34567\]86-*-linux*"]
+         || [istarget "powerpc*-*-linux*"] } {
 	return 1
     }
 
@@ -1897,7 +1926,8 @@ proc supports_reverse {} {
     }
 
     if { [istarget "arm*-*-linux*"] || [istarget "x86_64-*-linux*"]
-         || [istarget "i\[34567\]86-*-linux*"] } {
+         || [istarget "i\[34567\]86-*-linux*"]
+         || [istarget "powerpc*-*-linux*"] } {
 	return 1
     }
 
@@ -2518,6 +2548,26 @@ proc skip_libstdcxx_probe_tests {} {
     return $ok
 }
 
+# Return 1 if we should skip tests of the "compile" feature.
+# This must be invoked after the inferior has been started.
+
+proc skip_compile_feature_tests {} {
+    global gdb_prompt
+
+    set result 0
+    gdb_test_multiple "compile code -- ;" "check for working compile command" {
+	"Could not load libcc1.*\r\n$gdb_prompt $" {
+	    set result 1
+	}
+	-re "Command not supported on this host\\..*\r\n$gdb_prompt $" {
+	    set result 1
+	}
+	-re "\r\n$gdb_prompt $" {
+	}
+    }
+    return $result
+}
+
 # Check whether we're testing with the remote or extended-remote
 # targets.
 
@@ -2535,6 +2585,31 @@ proc gdb_is_target_remote {} {
 	}
     }
     return 0
+}
+
+# Return 1 if the current remote target is an instance of our GDBserver, 0
+# otherwise.  Return -1 if there was an error and we can't tell.
+
+gdb_caching_proc target_is_gdbserver {
+    global gdb_prompt
+
+    set is_gdbserver -1
+    set test "Probing for GDBserver"
+
+    gdb_test_multiple "monitor help" $test {
+	-re "The following monitor commands are supported.*Quit GDBserver.*$gdb_prompt $" {
+	    set is_gdbserver 1
+	}
+	-re "$gdb_prompt $" {
+	    set is_gdbserver 0
+	}
+    }
+
+    if { $is_gdbserver == -1 } {
+	verbose -log "Unable to tell whether we are using GDBserver or not."
+    }
+
+    return $is_gdbserver
 }
 
 set compiler_info		"unknown"
@@ -3359,11 +3434,38 @@ proc gdb_exit { } {
     catch default_gdb_exit
 }
 
+# Return true if we can spawn a program on the target and attach to
+# it.
+
+proc can_spawn_for_attach { } {
+    # We use TCL's exec to get the inferior's pid.
+    if [is_remote target] then {
+	return 0
+    }
+
+    # The "attach" command doesn't make sense when the target is
+    # stub-like, where GDB finds the program already started on
+    # initial connection.
+    if {[target_info exists use_gdb_stub]} {
+	return 0
+    }
+
+    # Assume yes.
+    return 1
+}
+
 # Start a set of programs running and then wait for a bit, to be sure
 # that they can be attached to.  Return a list of the processes' PIDs.
+# It's a test error to call this when [can_spawn_for_attach] is false.
 
 proc spawn_wait_for_attach { executable_list } {
     set pid_list {}
+
+    if ![can_spawn_for_attach] {
+	# The caller should have checked can_spawn_for_attach itself
+	# before getting here.
+	error "can't spawn for attach with this target/board"
+    }
 
     foreach {executable} $executable_list {
 	lappend pid_list [eval exec $executable &]
@@ -4330,14 +4432,14 @@ gdb_caching_proc gdb_has_argv0 {
 # foo.debug --> foo's debug info
 # foo --> like foo, but with a new .gnu_debuglink section pointing to foo.debug.
 
-# Return the build-id hex string (usually 160 bits as 40 hex characters)
-# converted to the form: .build-id/ab/cdef1234...89.debug
-# Return "" if no build-id found.
-proc build_id_debug_filename_get { exec } {
-    set tmp [standard_output_file "${exec}-tmp"]
+# Fetch the build id from the file.
+# Returns "" if there is none.
+
+proc get_build_id { filename } {
+    set tmp [standard_output_file "${filename}-tmp"]
     set objcopy_program [gdb_find_objcopy]
 
-    set result [catch "exec $objcopy_program -j .note.gnu.build-id -O binary $exec $tmp" output]
+    set result [catch "exec $objcopy_program -j .note.gnu.build-id -O binary $filename $tmp" output]
     verbose "result is $result"
     verbose "output is $output"
     if {$result == 1} {
@@ -4355,6 +4457,17 @@ proc build_id_debug_filename_get { exec } {
     }
     # Convert it to hex.
     binary scan $data H* data
+    return $data
+}
+
+# Return the build-id hex string (usually 160 bits as 40 hex characters)
+# converted to the form: .build-id/ab/cdef1234...89.debug
+# Return "" if no build-id found.
+proc build_id_debug_filename_get { filename } {
+    set data [get_build_id $filename]
+    if { $data == "" } {
+	return ""
+    }
     regsub {^..} $data {\0/} data
     return ".build-id/${data}.debug"
 }

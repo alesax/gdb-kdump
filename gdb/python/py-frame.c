@@ -1,6 +1,6 @@
 /* Python interface to stack frames
 
-   Copyright (C) 2008-2014 Free Software Foundation, Inc.
+   Copyright (C) 2008-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -300,10 +300,8 @@ frapy_block (PyObject *self, PyObject *args)
 
   if (block)
     {
-      struct symtab *symt;
-
-      symt = SYMBOL_SYMTAB (BLOCK_FUNCTION (fn_block));
-      return block_to_block_object (block, symt->objfile);
+      return block_to_block_object
+	(block, symbol_objfile (BLOCK_FUNCTION (fn_block)));
     }
 
   Py_RETURN_NONE;

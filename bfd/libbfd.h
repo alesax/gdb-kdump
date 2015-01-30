@@ -6,7 +6,7 @@
 /* libbfd.h -- Declarations used by bfd library *implementation*.
    (This include file is not for users of the library.)
 
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
 
    Written by Cygnus Support.
 
@@ -397,6 +397,8 @@ extern bfd_boolean _bfd_vms_lib_ia64_mkarchive (bfd *abfd);
   ((void (*) (bfd *, void *, asymbol *, bfd_print_symbol_type)) bfd_void)
 #define _bfd_nosymbols_get_symbol_info \
   ((void (*) (bfd *, asymbol *, symbol_info *)) bfd_void)
+#define _bfd_nosymbols_get_symbol_version_string \
+  ((const char *(*) (bfd *, asymbol *, bfd_boolean *)) bfd_nullvoidptr)
 #define _bfd_nosymbols_bfd_is_local_label_name \
   ((bfd_boolean (*) (bfd *, const char *)) bfd_false)
 #define _bfd_nosymbols_bfd_is_target_special_symbol \
@@ -842,6 +844,8 @@ extern void bfd_section_already_linked_table_traverse
 
 extern bfd_vma read_unsigned_leb128 (bfd *, bfd_byte *, unsigned int *);
 extern bfd_signed_vma read_signed_leb128 (bfd *, bfd_byte *, unsigned int *);
+extern bfd_vma safe_read_leb128 (bfd *, bfd_byte *, unsigned int *,
+				 bfd_boolean, const bfd_byte * const);
 /* Extracted from init.c.  */
 /* Extracted from libbfd.c.  */
 bfd_boolean bfd_write_bigendian_4byte_int (bfd *, unsigned int);
@@ -1188,6 +1192,11 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_MIPS_JUMP_SLOT",
 
   "BFD_RELOC_MOXIE_10_PCREL",
+
+  "BFD_RELOC_FT32_10",
+  "BFD_RELOC_FT32_20",
+  "BFD_RELOC_FT32_17",
+  "BFD_RELOC_FT32_18",
 
   "BFD_RELOC_FRV_LABEL16",
   "BFD_RELOC_FRV_LABEL24",
@@ -2953,6 +2962,13 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_EPIPHANY_SIMM11",
   "BFD_RELOC_EPIPHANY_IMM11",
   "BFD_RELOC_EPIPHANY_IMM8",
+  "BFD_RELOC_VISIUM_HI16",
+  "BFD_RELOC_VISIUM_LO16",
+  "BFD_RELOC_VISIUM_IM16",
+  "BFD_RELOC_VISIUM_REL16",
+  "BFD_RELOC_VISIUM_HI16_PCREL",
+  "BFD_RELOC_VISIUM_LO16_PCREL",
+  "BFD_RELOC_VISIUM_IM16_PCREL",
  "@@overflow: BFD_RELOC_UNUSED@@",
 };
 #endif

@@ -1,5 +1,5 @@
 dnl Autoconf configure script for GDB, the GNU debugger.
-dnl Copyright (C) 1995-2014 Free Software Foundation, Inc.
+dnl Copyright (C) 1995-2015 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
 dnl
@@ -51,11 +51,18 @@ esac
 AM_CONDITIONAL(GMAKE, test "$MAKE_IS_GNU" = yes)
 AC_PROG_MAKE_SET
 
+gnulib_extra_configure_args=
+# If large-file support is disabled, make sure gnulib does the same.
+if test "$enable_largefile" = no; then
+gnulib_extra_configure_args="$gnulib_extra_configure_args --disable-largefile"
+fi
+
 # Configure gnulib.  We need to build gnulib under some other
 # directory not "gnulib", to avoid the problem of both GDB and
 # GDBserver wanting to build it in the same directory, when building
 # in the source dir.
-ACX_CONFIGURE_DIR(["gnulib"], ["build-gnulib"])
+ACX_CONFIGURE_DIR(["gnulib"], ["build-gnulib"],
+                  ["$gnulib_extra_configure_args"])
 
 dnl List of object files and targets accumulated by configure.
 
@@ -197,6 +204,10 @@ else
 fi
 
 . $srcdir/configure.host
+
+# Add in the common host objects.
+. $srcdir/common/common.host
+gdb_host_obs="$gdb_host_obs $common_host_obs"
 
 # Accumulate some settings from configure.tgt over all enabled targets
 
@@ -600,9 +611,10 @@ case $host_os in
     ac_cv_search_tgetent="none required"
     ;;
   *mingw32*)
-    ac_cv_search_tgetent="none required"
-    CONFIG_OBS="$CONFIG_OBS windows-termcap.o"
-    ;;
+    if test x"$curses_found" != xyes; then
+      ac_cv_search_tgetent="none required"
+      CONFIG_OBS="$CONFIG_OBS windows-termcap.o"
+    fi ;;
 esac
 
 # These are the libraries checked by Readline.
@@ -1302,16 +1314,15 @@ AC_C_BIGENDIAN
 # Checks for library functions.  #
 # ------------------------------ #
 
-AC_FUNC_ALLOCA
 AC_FUNC_MMAP
 AC_FUNC_VFORK
-AC_CHECK_FUNCS([canonicalize_file_name realpath getrusage getuid getgid \
-		pipe poll pread pread64 pwrite readlink resize_term \
+AC_CHECK_FUNCS([getauxval getrusage getuid getgid \
+		pipe poll pread pread64 pwrite resize_term \
 		sbrk setpgid setpgrp setsid \
 		sigaction sigprocmask sigsetmask socketpair \
 		ttrace wborder wresize setlocale iconvlist libiconvlist btowc \
-		setrlimit getrlimit posix_madvise waitpid lstat \
-		ptrace64 sigaltstack])
+		setrlimit getrlimit posix_madvise waitpid \
+		ptrace64 sigaltstack mkdtemp])
 AM_LANGINFO_CODESET
 GDB_AC_COMMON
 

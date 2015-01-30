@@ -1,5 +1,5 @@
 /* MIPS-specific support for 64-bit ELF
-   Copyright (C) 1996-2014 Free Software Foundation, Inc.
+   Copyright (C) 1996-2015 Free Software Foundation, Inc.
    Ian Lance Taylor, Cygnus Support
    Linker support added by Mark Mitchell, CodeSourcery, LLC.
    <mark@codesourcery.com>
@@ -145,7 +145,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* No relocation.  */
   HOWTO (R_MIPS_NONE,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 3,			/* size (0 = byte, 1 = short, 2 = long) */
 	 0,			/* bitsize */
 	 FALSE,			/* pc_relative */
 	 0,			/* bitpos */
@@ -908,7 +908,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* No relocation.  */
   HOWTO (R_MIPS_NONE,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 3,			/* size (0 = byte, 1 = short, 2 = long) */
 	 0,			/* bitsize */
 	 FALSE,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3585,7 +3585,12 @@ mips_elf64_rtype_to_howto (unsigned int r_type, bfd_boolean rela_p)
 	  else
 	    return &mips16_elf64_howto_table_rel[r_type - R_MIPS16_min];
 	}
-      BFD_ASSERT (r_type < (unsigned int) R_MIPS_max);
+      if (r_type >= R_MIPS_max)
+	{
+	  (*_bfd_error_handler) (_("unrecognised MIPS reloc number: %d"), r_type);
+	  bfd_set_error (bfd_error_bad_value);
+	  r_type = R_MIPS_NONE;
+	}
       if (rela_p)
 	return &mips_elf64_howto_table_rela[r_type];
       else
@@ -4444,6 +4449,7 @@ const struct elf_size_info mips_elf64_size_info =
 #define elf_backend_sign_extend_vma	TRUE
 
 #define elf_backend_write_section	_bfd_mips_elf_write_section
+#define elf_backend_sort_relocs_p	_bfd_mips_elf_sort_relocs_p
 
 /* We don't set bfd_elf64_bfd_is_local_label_name because the 32-bit
    MIPS-specific function only applies to IRIX5, which had no 64-bit

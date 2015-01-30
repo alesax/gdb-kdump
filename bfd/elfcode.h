@@ -1,5 +1,5 @@
 /* ELF executable support for BFD.
-   Copyright (C) 1991-2014 Free Software Foundation, Inc.
+   Copyright (C) 1991-2015 Free Software Foundation, Inc.
 
    Written by Fred Fish @ Cygnus Support, from information published
    in "UNIX System V Release 4, Programmers Guide: ANSI C and
@@ -1214,10 +1214,9 @@ elf_slurp_symbol_table (bfd *abfd, asymbol **symptrs, bfd_boolean dynamic)
       for (isym = isymbuf + 1, sym = symbase; isym < isymend; isym++, sym++)
 	{
 	  memcpy (&sym->internal_elf_sym, isym, sizeof (Elf_Internal_Sym));
+
 	  sym->symbol.the_bfd = abfd;
-
 	  sym->symbol.name = bfd_elf_sym_name (abfd, hdr, isym, NULL);
-
 	  sym->symbol.value = isym->st_value;
 
 	  if (isym->st_shndx == SHN_UNDEF)
@@ -1501,7 +1500,9 @@ elf_slurp_reloc_table (bfd *abfd,
       rel_hdr2 = d->rela.hdr;
       reloc_count2 = rel_hdr2 ? NUM_SHDR_ENTRIES (rel_hdr2) : 0;
 
-      BFD_ASSERT (asect->reloc_count == reloc_count + reloc_count2);
+      /* PR 17512: file: 0b4f81b7.  */
+      if (asect->reloc_count != reloc_count + reloc_count2)
+	return FALSE;
       BFD_ASSERT ((rel_hdr && asect->rel_filepos == rel_hdr->sh_offset)
 		  || (rel_hdr2 && asect->rel_filepos == rel_hdr2->sh_offset));
 

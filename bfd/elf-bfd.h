@@ -1,5 +1,5 @@
 /* BFD back-end data structures for ELF files.
-   Copyright (C) 1992-2014 Free Software Foundation, Inc.
+   Copyright (C) 1992-2015 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -196,6 +196,8 @@ struct elf_link_hash_entry
   unsigned int pointer_equality_needed : 1;
   /* Symbol is a unique global symbol.  */
   unsigned int unique_global : 1;
+  /* Symbol is defined with non-default visibility.  */
+  unsigned int protected_def : 1;
 
   /* String table index in .dynstr if this is a dynamic symbol.  */
   unsigned long dynstr_index;
@@ -239,7 +241,8 @@ struct elf_link_hash_entry
   _bfd_elf_symbol_refs_local_p (H, INFO, 1)
 
 /* Common symbols that are turned into definitions don't have the
-   DEF_REGULAR flag set, so they might appear to be undefined.  */
+   DEF_REGULAR flag set, so they might appear to be undefined.
+   Symbols defined in linker scripts also don't have DEF_REGULAR set.  */
 #define ELF_COMMON_DEF_P(H) \
   (!(H)->def_regular							\
    && !(H)->def_dynamic							\
@@ -1109,6 +1112,11 @@ struct elf_backend_data
   unsigned int (*elf_backend_count_relocs)
     (struct bfd_link_info *, asection *);
 
+  /* Say whether to sort relocs output by ld -r and ld --emit-relocs,
+     by r_offset.  If NULL, default to true.  */
+  bfd_boolean (*sort_relocs_p)
+    (asection *);
+
   /* This function, if defined, is called when an NT_PRSTATUS note is found
      in a core file.  */
   bfd_boolean (*elf_backend_grok_prstatus)
@@ -1772,6 +1780,8 @@ extern bfd_boolean _bfd_elf_copy_private_bfd_data
   (bfd *, bfd *);
 extern bfd_boolean _bfd_elf_print_private_bfd_data
   (bfd *, void *);
+const char * _bfd_elf_get_symbol_version_string
+  (bfd *, asymbol *, bfd_boolean *);
 extern void bfd_elf_print_symbol
   (bfd *, void *, asymbol *, bfd_print_symbol_type);
 
@@ -1904,6 +1914,8 @@ extern bfd_boolean _bfd_elf_find_line
   (bfd *, asymbol **, asymbol *, const char **, unsigned int *);
 extern bfd_boolean _bfd_elf_find_inliner_info
   (bfd *, const char **, const char **, unsigned int *);
+extern bfd_boolean _bfd_elf_find_function
+  (bfd *, asymbol **, asection *, bfd_vma, const char **, const char **);
 #define _bfd_elf_read_minisymbols _bfd_generic_read_minisymbols
 #define _bfd_elf_minisymbol_to_symbol _bfd_generic_minisymbol_to_symbol
 extern int _bfd_elf_sizeof_headers
@@ -2017,7 +2029,7 @@ extern bfd_boolean _bfd_elf_link_output_relocs
    struct elf_link_hash_entry **);
 
 extern bfd_boolean _bfd_elf_adjust_dynamic_copy
-  (struct elf_link_hash_entry *, asection *);
+  (struct bfd_link_info *, struct elf_link_hash_entry *, asection *);
 
 extern bfd_boolean _bfd_elf_dynamic_symbol_p
   (struct elf_link_hash_entry *, struct bfd_link_info *, bfd_boolean);
@@ -2374,6 +2386,9 @@ extern bfd_boolean _bfd_elf_create_ifunc_sections
 extern bfd_boolean _bfd_elf_allocate_ifunc_dyn_relocs
   (struct bfd_link_info *, struct elf_link_hash_entry *,
    struct elf_dyn_relocs **, unsigned int, unsigned int, unsigned int);
+extern long _bfd_elf_ifunc_get_synthetic_symtab
+  (bfd *, long, asymbol **, long, asymbol **, asymbol **, asection *,
+   bfd_vma *(*) (bfd *, asymbol **, asection *, asection *));
 
 extern void elf_append_rela (bfd *, asection *, Elf_Internal_Rela *);
 extern void elf_append_rel (bfd *, asection *, Elf_Internal_Rela *);

@@ -1,6 +1,6 @@
 // x86_64.cc -- x86_64 target support for gold.
 
-// Copyright (C) 2006-2014 Free Software Foundation, Inc.
+// Copyright (C) 2006-2015 Free Software Foundation, Inc.
 // Written by Ian Lance Taylor <iant@google.com>.
 
 // This file is part of gold.
@@ -1516,11 +1516,16 @@ Output_data_plt_x86_64_standard<size>::do_fill_plt_entry(
     unsigned int plt_offset,
     unsigned int plt_index)
 {
+  // Check PC-relative offset overflow in PLT entry.
+  uint64_t plt_got_pcrel_offset = (got_address + got_offset
+				   - (plt_address + plt_offset + 6));
+  if (Bits<32>::has_overflow(plt_got_pcrel_offset))
+    gold_error(_("PC-relative offset overflow in PLT entry %d"),
+	       plt_index + 1);
+
   memcpy(pov, plt_entry, plt_entry_size);
   elfcpp::Swap_unaligned<32, false>::writeval(pov + 2,
-					      (got_address + got_offset
-					       - (plt_address + plt_offset
-						  + 6)));
+					      plt_got_pcrel_offset);
 
   elfcpp::Swap_unaligned<32, false>::writeval(pov + 7, plt_index);
   elfcpp::Swap<32, false>::writeval(pov + 12,
@@ -2923,11 +2928,6 @@ Target_x86_64<size>::Scan::global(Symbol_table* symtab,
 		  }
 	      }
 	  }
-	// For GOTPLT64, we also need a PLT entry (but only if the
-	// symbol is not fully resolved).
-	if (r_type == elfcpp::R_X86_64_GOTPLT64
-	    && !gsym->final_value_is_known())
-	  target->make_plt_entry(symtab, layout, gsym);
       }
       break;
 
@@ -2983,7 +2983,12 @@ Target_x86_64<size>::Scan::global(Symbol_table* symtab,
     case elfcpp::R_X86_64_GOTTPOFF:         // Initial-exec
     case elfcpp::R_X86_64_TPOFF32:          // Local-exec
       {
-	const bool is_final = gsym->final_value_is_known();
+	// For the Initial-Exec model, we can treat undef symbols as final
+	// when building an executable.
+	const bool is_final = (gsym->final_value_is_known() ||
+			       (r_type == elfcpp::R_X86_64_GOTTPOFF &&
+			        gsym->is_undefined() &&
+				parameters->options().output_is_executable()));
 	const tls::Tls_optimization optimized_type
 	    = Target_x86_64<size>::optimize_tls_reloc(is_final, r_type);
 	switch (r_type)
@@ -3454,9 +3459,9 @@ Target_x86_64<size>::Relocate::relocate(
       break;
 
     case elfcpp::R_X86_64_GOT64:
-      // The ABI doc says "Like GOT64, but indicates a PLT entry is needed."
-      // Since we always add a PLT entry, this is equivalent.
     case elfcpp::R_X86_64_GOTPLT64:
+      // R_X86_64_GOTPLT64 is obsolete and treated the the same as
+      // GOT64.
       gold_assert(have_got_offset);
       Relocate_functions<size, false>::rela64(view, got_offset, addend);
       break;
@@ -3779,7 +3784,15 @@ Target_x86_64<size>::Relocate::relocate_tls(
       break;
 
     case elfcpp::R_X86_64_GOTTPOFF:         // Initial-exec
-      if (optimized_type == tls::TLSOPT_TO_LE)
+      if (gsym != NULL && gsym->is_undefined())
+	{
+	  Target_x86_64<size>::Relocate::tls_ie_to_le(relinfo, relnum,
+						      NULL, rela,
+						      r_type, value, view,
+						      view_size);
+	  break;
+	}
+      else if (optimized_type == tls::TLSOPT_TO_LE)
 	{
 	  if (tls_segment == NULL)
 	    {
@@ -4100,6 +4113,8 @@ Target_x86_64<size>::Relocate::tls_ie_to_le(
       // movq
       if (op1 == 0x4c)
 	view[-3] = 0x49;
+      else if (size == 32 && op1 == 0x44)
+	view[-3] = 0x41;
       view[-2] = 0xc7;
       view[-1] = 0xc0 | reg;
     }
@@ -4108,6 +4123,8 @@ Target_x86_64<size>::Relocate::tls_ie_to_le(
       // Special handling for %rsp.
       if (op1 == 0x4c)
 	view[-3] = 0x49;
+      else if (size == 32 && op1 == 0x44)
+	view[-3] = 0x41;
       view[-2] = 0x81;
       view[-1] = 0xc0 | reg;
     }
@@ -4116,11 +4133,14 @@ Target_x86_64<size>::Relocate::tls_ie_to_le(
       // addq
       if (op1 == 0x4c)
 	view[-3] = 0x4d;
+      else if (size == 32 && op1 == 0x44)
+	view[-3] = 0x45;
       view[-2] = 0x8d;
       view[-1] = 0x80 | reg | (reg << 3);
     }
 
-  value -= tls_segment->memsz();
+  if (tls_segment != NULL)
+    value -= tls_segment->memsz();
   Relocate_functions<size, false>::rela32(view, value, 0);
 }
 
@@ -4457,6 +4477,14 @@ Target_x86_64<size>::do_ehframe_datarel_base() const
 // code.  We have to change the function so that it always ensures
 // that it has enough stack space to run some random function.
 
+static const unsigned char cmp_insn_32[] = { 0x64, 0x3b, 0x24, 0x25 };
+static const unsigned char lea_r10_insn_32[] = { 0x44, 0x8d, 0x94, 0x24 };
+static const unsigned char lea_r11_insn_32[] = { 0x44, 0x8d, 0x9c, 0x24 };
+
+static const unsigned char cmp_insn_64[] = { 0x64, 0x48, 0x3b, 0x24, 0x25 };
+static const unsigned char lea_r10_insn_64[] = { 0x4c, 0x8d, 0x94, 0x24 };
+static const unsigned char lea_r11_insn_64[] = { 0x4c, 0x8d, 0x9c, 0x24 };
+
 template<int size>
 void
 Target_x86_64<size>::do_calls_non_split(Relobj* object, unsigned int shndx,
@@ -4467,25 +4495,40 @@ Target_x86_64<size>::do_calls_non_split(Relobj* object, unsigned int shndx,
 					std::string* from,
 					std::string* to) const
 {
+  const char* const cmp_insn = reinterpret_cast<const char*>
+      (size == 32 ? cmp_insn_32 : cmp_insn_64);
+  const char* const lea_r10_insn = reinterpret_cast<const char*>
+      (size == 32 ? lea_r10_insn_32 : lea_r10_insn_64);
+  const char* const lea_r11_insn = reinterpret_cast<const char*>
+      (size == 32 ? lea_r11_insn_32 : lea_r11_insn_64);
+
+  const size_t cmp_insn_len =
+      (size == 32 ? sizeof(cmp_insn_32) : sizeof(cmp_insn_64));
+  const size_t lea_r10_insn_len =
+      (size == 32 ? sizeof(lea_r10_insn_32) : sizeof(lea_r10_insn_64));
+  const size_t lea_r11_insn_len =
+      (size == 32 ? sizeof(lea_r11_insn_32) : sizeof(lea_r11_insn_64));
+  const size_t nop_len = (size == 32 ? 7 : 8);
+
   // The function starts with a comparison of the stack pointer and a
   // field in the TCB.  This is followed by a jump.
 
   // cmp %fs:NN,%rsp
-  if (this->match_view(view, view_size, fnoffset, "\x64\x48\x3b\x24\x25", 5)
-      && fnsize > 9)
+  if (this->match_view(view, view_size, fnoffset, cmp_insn, cmp_insn_len)
+      && fnsize > nop_len + 1)
     {
       // We will call __morestack if the carry flag is set after this
       // comparison.  We turn the comparison into an stc instruction
       // and some nops.
       view[fnoffset] = '\xf9';
-      this->set_view_to_nop(view, view_size, fnoffset + 1, 8);
+      this->set_view_to_nop(view, view_size, fnoffset + 1, nop_len);
     }
   // lea NN(%rsp),%r10
   // lea NN(%rsp),%r11
   else if ((this->match_view(view, view_size, fnoffset,
-			     "\x4c\x8d\x94\x24", 4)
+			     lea_r10_insn, lea_r10_insn_len)
 	    || this->match_view(view, view_size, fnoffset,
-				"\x4c\x8d\x9c\x24", 4))
+				lea_r11_insn, lea_r11_insn_len))
 	   && fnsize > 8)
     {
       // This is loading an offset from the stack pointer for a

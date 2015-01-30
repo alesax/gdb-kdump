@@ -1,5 +1,5 @@
 /* expr.c -operands, expressions-
-   Copyright (C) 1987-2014 Free Software Foundation, Inc.
+   Copyright (C) 1987-2015 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -124,7 +124,7 @@ make_expr_symbol (expressionS *expressionP)
 int
 expr_symbol_where (symbolS *sym, char **pfile, unsigned int *pline)
 {
-  register struct expr_symbol_line *l;
+  struct expr_symbol_line *l;
 
   for (l = expr_symbol_lines; l != NULL; l = l->next)
     {

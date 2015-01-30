@@ -1,5 +1,5 @@
 /* tc-xtensa.c -- Assemble Xtensa instructions.
-   Copyright (C) 2003-2014 Free Software Foundation, Inc.
+   Copyright (C) 2003-2015 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -9514,11 +9514,11 @@ search_trampolines (TInsn *tinsn, fragS *fragP, bfd_boolean unreachable_only)
 	      if (next_addr == 0 || addr - next_addr > J_RANGE)
 		break;
 	    }
-	  if (abs (addr - this_addr) < J_RANGE)
-	    return tf;
-
-	  return NULL;
 	}
+      if (abs (addr - this_addr) < J_RANGE)
+	return tf;
+
+      return NULL;
     }
   for ( ; tf; tf = tf->next)
     {

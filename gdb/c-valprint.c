@@ -1,6 +1,6 @@
 /* Support for printing C values for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -495,7 +495,7 @@ c_value_print (struct value *val, struct ui_file *stream,
 	  /* Print nothing.  */
 	}
       else if (options->objectprint
-	       && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_CLASS))
+	       && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT))
 	{
 	  int is_ref = TYPE_CODE (type) == TYPE_CODE_REF;
 
@@ -545,7 +545,7 @@ c_value_print (struct value *val, struct ui_file *stream,
   if (!value_initialized (val))
     fprintf_filtered (stream, " [uninitialized] ");
 
-  if (options->objectprint && (TYPE_CODE (type) == TYPE_CODE_CLASS))
+  if (options->objectprint && (TYPE_CODE (type) == TYPE_CODE_STRUCT))
     {
       /* Attempt to determine real type of object.  */
       real_type = value_rtti_type (val, &full, &top, &using_enc);

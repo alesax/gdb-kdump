@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 dnl
-dnl   Copyright (C) 2006-2014 Free Software Foundation, Inc.
+dnl   Copyright (C) 2006-2015 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -204,7 +204,20 @@ for targ in $target $canon_targets; do
 	AM_CONDITIONAL(DEFAULT_TARGET_I386, test "$targ_obj" = "i386")
 	AM_CONDITIONAL(DEFAULT_TARGET_POWERPC, test "$targ_obj" = "powerpc")
 	AM_CONDITIONAL(DEFAULT_TARGET_SPARC, test "$targ_obj" = "sparc")
-	AM_CONDITIONAL(DEFAULT_TARGET_X86_64, test "$targ_obj" = "x86_64")
+	target_x86_64=no
+	target_x32=no
+	if test "$targ_obj" = "x86_64"; then
+	  case "$target" in
+	  x86_64*-linux-gnux32)
+	    target_x32=yes
+	    ;;
+	  *)
+	    target_x86_64=yes
+	    ;;
+	  esac
+	fi
+	AM_CONDITIONAL(DEFAULT_TARGET_X86_64, test "$target_x86_64" = "yes")
+	AM_CONDITIONAL(DEFAULT_TARGET_X32, test "$target_x32" = "yes")
 	AM_CONDITIONAL(DEFAULT_TARGET_TILEGX, test "$targ_obj" = "tilegx")
         AM_CONDITIONAL(DEFAULT_TARGET_MIPS, test "$targ_obj" = "mips")
 	DEFAULT_TARGET=${targ_obj}

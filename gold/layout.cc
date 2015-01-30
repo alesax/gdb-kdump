@@ -1,6 +1,6 @@
 // layout.cc -- lay out output file sections for gold
 
-// Copyright (C) 2006-2014 Free Software Foundation, Inc.
+// Copyright (C) 2006-2015 Free Software Foundation, Inc.
 // Written by Ian Lance Taylor <iant@google.com>.
 
 // This file is part of gold.
@@ -524,6 +524,7 @@ static const char* gdb_sections[] =
   "addr",         // Fission extension
   // "aranges",   // not used by gdb as of 7.4
   "frame",
+  "gdb_scripts",
   "info",
   "types",
   "line",
@@ -532,8 +533,11 @@ static const char* gdb_sections[] =
   "macro",
   // "pubnames",  // not used by gdb as of 7.4
   // "pubtypes",  // not used by gdb as of 7.4
+  // "gnu_pubnames",  // Fission extension
+  // "gnu_pubtypes",  // Fission extension
   "ranges",
   "str",
+  "str_offsets",
 };
 
 // This is the minimum set of sections needed for line numbers.
@@ -544,6 +548,7 @@ static const char* lines_only_debug_sections[] =
   // "addr",      // Fission extension
   // "aranges",   // not used by gdb as of 7.4
   // "frame",
+  // "gdb_scripts",
   "info",
   // "types",
   "line",
@@ -552,8 +557,11 @@ static const char* lines_only_debug_sections[] =
   // "macro",
   // "pubnames",  // not used by gdb as of 7.4
   // "pubtypes",  // not used by gdb as of 7.4
+  // "gnu_pubnames",  // Fission extension
+  // "gnu_pubtypes",  // Fission extension
   // "ranges",
   "str",
+  "str_offsets",  // Fission extension
 };
 
 // These sections are the DWARF fast-lookup tables, and are not needed
@@ -2093,8 +2101,7 @@ Layout::layout_gnu_stack(bool seen_gnu_stack, uint64_t gnu_stack_flags,
       if ((gnu_stack_flags & elfcpp::SHF_EXECINSTR) != 0)
 	{
 	  this->input_requires_executable_stack_ = true;
-	  if (parameters->options().warn_execstack()
-	      || parameters->options().is_stack_executable())
+	  if (parameters->options().warn_execstack())
 	    gold_warning(_("%s: requires executable stack"),
 			 obj->name().c_str());
 	}
@@ -2967,7 +2974,14 @@ Layout::create_executable_stack_info()
 {
   bool is_stack_executable;
   if (parameters->options().is_execstack_set())
-    is_stack_executable = parameters->options().is_stack_executable();
+    {
+      is_stack_executable = parameters->options().is_stack_executable();
+      if (!is_stack_executable
+          && this->input_requires_executable_stack_
+          && parameters->options().warn_execstack())
+	gold_warning(_("one or more inputs require executable stack, "
+	               "but -z noexecstack was given"));
+    }
   else if (!this->input_with_gnu_stack_note_)
     return;
   else
@@ -3510,7 +3524,9 @@ Layout::set_segment_offsets(const Target* target, Output_segment* load_seg,
 	      // put them on different pages in memory. We will revisit this
 	      // decision once we know the size of the segment.
 
-	      addr = align_address(addr, (*p)->maximum_alignment());
+	      uint64_t max_align = (*p)->maximum_alignment();
+	      if (max_align > abi_pagesize)
+		addr = align_address(addr, max_align);
 	      aligned_addr = addr;
 
 	      if (load_seg == *p)
@@ -4869,6 +4885,8 @@ Layout::finish_dynamic_section(const Input_objects* input_objects,
     odyn->add_constant(elfcpp::DT_FLAGS, flags);
 
   flags = 0;
+  if (parameters->options().global())
+    flags |= elfcpp::DF_1_GLOBAL;
   if (parameters->options().initfirst())
     flags |= elfcpp::DF_1_INITFIRST;
   if (parameters->options().interpose())

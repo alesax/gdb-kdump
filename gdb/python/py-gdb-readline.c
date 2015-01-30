@@ -1,6 +1,6 @@
 /* Readline support for Python.
 
-   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+   Copyright (C) 2012-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,7 +29,11 @@
 
 static char *
 gdbpy_readline_wrapper (FILE *sys_stdin, FILE *sys_stdout,
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4
+			const char *prompt)
+#else
 			char *prompt)
+#endif
 {
   int n;
   char *p = NULL, *q;

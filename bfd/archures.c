@@ -1,5 +1,5 @@
 /* BFD library support routines for architectures.
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
    Hacked by John Gilmore and Steve Chamberlain of Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -179,6 +179,7 @@ DESCRIPTION
 .#define bfd_mach_mips_octeon		6501
 .#define bfd_mach_mips_octeonp		6601
 .#define bfd_mach_mips_octeon2		6502
+.#define bfd_mach_mips_octeon3          6503
 .#define bfd_mach_mips_xlr              887682   {* decimal 'XLR'  *}
 .#define bfd_mach_mipsisa32             32
 .#define bfd_mach_mipsisa32r2           33
@@ -377,6 +378,8 @@ DESCRIPTION
 .#define bfd_mach_fr550		550
 .  bfd_arch_moxie,       {* The moxie processor *}
 .#define bfd_mach_moxie		1
+.  bfd_arch_ft32,       {* The ft32 processor *}
+.#define bfd_mach_ft32		1
 .  bfd_arch_mcore,
 .  bfd_arch_mep,
 .#define bfd_mach_mep		1
@@ -496,6 +499,8 @@ DESCRIPTION
 .#define bfd_mach_aarch64_ilp32	32
 .  bfd_arch_nios2,
 .#define bfd_mach_nios2	0
+.  bfd_arch_visium,	{* Visium *}
+.#define bfd_mach_visium	1
 .  bfd_arch_last
 .  };
 */
@@ -586,6 +591,7 @@ extern const bfd_arch_info_type bfd_mmix_arch;
 extern const bfd_arch_info_type bfd_mn10200_arch;
 extern const bfd_arch_info_type bfd_mn10300_arch;
 extern const bfd_arch_info_type bfd_moxie_arch;
+extern const bfd_arch_info_type bfd_ft32_arch;
 extern const bfd_arch_info_type bfd_msp430_arch;
 extern const bfd_arch_info_type bfd_mt_arch;
 extern const bfd_arch_info_type bfd_nds32_arch;
@@ -615,6 +621,7 @@ extern const bfd_arch_info_type bfd_tilepro_arch;
 extern const bfd_arch_info_type bfd_v850_arch;
 extern const bfd_arch_info_type bfd_v850_rh850_arch;
 extern const bfd_arch_info_type bfd_vax_arch;
+extern const bfd_arch_info_type bfd_visium_arch;
 extern const bfd_arch_info_type bfd_w65_arch;
 extern const bfd_arch_info_type bfd_we32k_arch;
 extern const bfd_arch_info_type bfd_xstormy16_arch;
@@ -675,6 +682,7 @@ static const bfd_arch_info_type * const bfd_archures_list[] =
     &bfd_mn10200_arch,
     &bfd_mn10300_arch,
     &bfd_moxie_arch,
+    &bfd_ft32_arch,
     &bfd_msp430_arch,
     &bfd_mt_arch,
     &bfd_nds32_arch,
@@ -701,6 +709,7 @@ static const bfd_arch_info_type * const bfd_archures_list[] =
     &bfd_v850_arch,
     &bfd_v850_rh850_arch,
     &bfd_vax_arch,
+    &bfd_visium_arch,
     &bfd_w65_arch,
     &bfd_we32k_arch,
     &bfd_xstormy16_arch,

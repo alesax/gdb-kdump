@@ -1,6 +1,6 @@
 /* Intel 386 target-dependent stuff.
 
-   Copyright (C) 1988-2014 Free Software Foundation, Inc.
+   Copyright (C) 1988-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1817,14 +1817,15 @@ i386_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
     {
       CORE_ADDR post_prologue_pc
 	= skip_prologue_using_sal (gdbarch, func_addr);
-      struct symtab *s = find_pc_symtab (func_addr);
+      struct compunit_symtab *cust = find_pc_compunit_symtab (func_addr);
 
       /* Clang always emits a line note before the prologue and another
 	 one after.  We trust clang to emit usable line notes.  */
       if (post_prologue_pc
-	  && (s != NULL
-	      && s->producer != NULL
-	      && strncmp (s->producer, "clang ", sizeof ("clang ") - 1) == 0))
+	  && (cust != NULL
+	      && COMPUNIT_PRODUCER (cust) != NULL
+	      && strncmp (COMPUNIT_PRODUCER (cust), "clang ",
+			  sizeof ("clang ") - 1) == 0))
         return max (start_pc, post_prologue_pc);
     }
  
@@ -2183,10 +2184,10 @@ static int
 i386_in_function_epilogue_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   gdb_byte insn;
-  struct symtab *symtab;
+  struct compunit_symtab *cust;
 
-  symtab = find_pc_symtab (pc);
-  if (symtab && symtab->epilogue_unwind_valid)
+  cust = find_pc_compunit_symtab (pc);
+  if (cust != NULL && COMPUNIT_EPILOGUE_UNWIND_VALID (cust))
     return 0;
 
   if (target_read_memory (pc, &insn, 1))
@@ -4305,6 +4306,17 @@ i386_stap_parse_special_token (struct gdbarch *gdbarch,
 
 
 
+/* gdbarch gnu_triplet_regexp method.  Both arches are acceptable as GDB always
+   also supplies -m64 or -m32 by gdbarch_gcc_target_options.  */
+
+static const char *
+i386_gnu_triplet_regexp (struct gdbarch *gdbarch)
+{
+  return "(x86_64|i.86)";
+}
+
+
+
 /* Generic ELF.  */
 
 void
@@ -4331,6 +4343,8 @@ i386_elf_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 				      i386_stap_is_single_operand);
   set_gdbarch_stap_parse_special_token (gdbarch,
 					i386_stap_parse_special_token);
+
+  set_gdbarch_gnu_triplet_regexp (gdbarch, i386_gnu_triplet_regexp);
 }
 
 /* System V Release 4 (SVR4).  */
@@ -4378,6 +4392,8 @@ i386_go32_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   set_gdbarch_sdb_reg_to_regnum (gdbarch, i386_svr4_reg_to_regnum);
 
   set_gdbarch_has_dos_based_file_system (gdbarch, 1);
+
+  set_gdbarch_gnu_triplet_regexp (gdbarch, i386_gnu_triplet_regexp);
 }
 
 
@@ -4522,18 +4538,6 @@ i386_fetch_pointer_argument (struct frame_info *frame, int argi,
   CORE_ADDR sp = get_frame_register_unsigned (frame, I386_ESP_REGNUM);
   return read_memory_unsigned_integer (sp + (4 * (argi + 1)), 4, byte_order);
 }
-
-static void
-i386_skip_permanent_breakpoint (struct regcache *regcache)
-{
-  CORE_ADDR current_pc = regcache_read_pc (regcache);
-
- /* On i386, breakpoint is exactly 1 byte long, so we just
-    adjust the PC in the regcache.  */
-  current_pc += 1;
-  regcache_write_pc (regcache, current_pc);
-}
-
 
 #define PREFIX_REPZ	0x01
 #define PREFIX_REPNZ	0x02
@@ -8413,6 +8417,8 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
      gap for the upper AVX, MPX and AVX512 registers.  */
   set_gdbarch_num_regs (gdbarch, I386_AVX512_NUM_REGS);
 
+  set_gdbarch_gnu_triplet_regexp (gdbarch, i386_gnu_triplet_regexp);
+
   /* Get the x86 target description from INFO.  */
   tdesc = info.target_desc;
   if (! tdesc_has_registers (tdesc))
@@ -8565,9 +8571,6 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
       && !gdbarch_iterate_over_regset_sections_p (gdbarch))
     set_gdbarch_iterate_over_regset_sections
       (gdbarch, i386_iterate_over_regset_sections);
-
-  set_gdbarch_skip_permanent_breakpoint (gdbarch,
-					 i386_skip_permanent_breakpoint);
 
   set_gdbarch_fast_tracepoint_valid_at (gdbarch,
 					i386_fast_tracepoint_valid_at);

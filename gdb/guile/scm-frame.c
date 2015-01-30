@@ -1,6 +1,6 @@
 /* Scheme interface to stack frames.
 
-   Copyright (C) 2008-2014 Free Software Foundation, Inc.
+   Copyright (C) 2008-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -608,11 +608,8 @@ gdbscm_frame_block (SCM self)
 
   if (block != NULL)
     {
-      struct symtab *st;
-      SCM block_scm;
-
-      st = SYMBOL_SYMTAB (BLOCK_FUNCTION (fn_block));
-      return bkscm_scm_from_block (block, st->objfile);
+      return bkscm_scm_from_block
+	(block, symbol_objfile (BLOCK_FUNCTION (fn_block)));
     }
 
   return SCM_BOOL_F;

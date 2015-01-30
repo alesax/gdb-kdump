@@ -1,5 +1,5 @@
 /* ldmisc.c
-   Copyright (C) 1991-2014 Free Software Foundation, Inc.
+   Copyright (C) 1991-2015 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support.
 
    This file is part of the GNU Binutils.
@@ -35,6 +35,7 @@
 #include "ldmain.h"
 #include "ldfile.h"
 #include "elf-bfd.h"
+#include "coff-bfd.h"
 
 /*
  %% literal %

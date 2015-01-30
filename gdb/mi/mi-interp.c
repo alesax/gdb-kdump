@@ -1,6 +1,6 @@
 /* MI Interpreter Definitions and Commands for GDB, the GNU debugger.
 
-   Copyright (C) 2002-2014 Free Software Foundation, Inc.
+   Copyright (C) 2002-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -371,7 +371,7 @@ static void
 mi_new_thread (struct thread_info *t)
 {
   struct mi_interp *mi = top_level_interpreter_data ();
-  struct inferior *inf = find_inferior_pid (ptid_get_pid (t->ptid));
+  struct inferior *inf = find_inferior_ptid (t->ptid);
 
   gdb_assert (inf);
 
@@ -386,18 +386,22 @@ mi_thread_exit (struct thread_info *t, int silent)
 {
   struct mi_interp *mi;
   struct inferior *inf;
+  struct cleanup *old_chain;
 
   if (silent)
     return;
 
-  inf = find_inferior_pid (ptid_get_pid (t->ptid));
+  inf = find_inferior_ptid (t->ptid);
 
   mi = top_level_interpreter_data ();
+  old_chain = make_cleanup_restore_target_terminal ();
   target_terminal_ours ();
   fprintf_unfiltered (mi->event_channel, 
 		      "thread-exited,id=\"%d\",group-id=\"i%d\"",
 		      t->num, inf->num);
   gdb_flush (mi->event_channel);
+
+  do_cleanups (old_chain);
 }
 
 /* Emit notification on changing the state of record.  */

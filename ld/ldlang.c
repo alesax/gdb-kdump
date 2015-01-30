@@ -1,5 +1,5 @@
 /* Linker command language support.
-   Copyright (C) 1991-2014 Free Software Foundation, Inc.
+   Copyright (C) 1991-2015 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -64,7 +64,6 @@ static bfd_vma print_dot;
 static lang_input_statement_type *first_file;
 static const char *current_target;
 static lang_statement_list_type statement_list;
-static struct bfd_hash_table lang_definedness_table;
 static lang_statement_list_type *stat_save[10];
 static lang_statement_list_type **stat_save_ptr = &stat_save[0];
 static struct unique_sections *unique_section_list;
@@ -73,8 +72,6 @@ static struct asneeded_minfo *asneeded_list_head;
 /* Forward declarations.  */
 static void exp_init_os (etree_type *);
 static lang_input_statement_type *lookup_name (const char *);
-static struct bfd_hash_entry *lang_definedness_newfunc
- (struct bfd_hash_entry *, struct bfd_hash_table *, const char *);
 static void insert_undefined (const char *);
 static bfd_boolean sort_def_symbol (struct bfd_link_hash_entry *, void *);
 static void print_statement (lang_statement_union_type *,
@@ -88,6 +85,7 @@ static void lang_record_phdrs (void);
 static void lang_do_version_exports_section (void);
 static void lang_finalize_version_expr_head
   (struct bfd_elf_version_expr_head *);
+static void lang_do_memory_regions (void);
 
 /* Exported variables.  */
 const char *output_target;
@@ -1241,14 +1239,6 @@ lang_init (void)
 
   abs_output_section->bfd_section = bfd_abs_section_ptr;
 
-  /* The value "13" is ad-hoc, somewhat related to the expected number of
-     assignments in a linker script.  */
-  if (!bfd_hash_table_init_n (&lang_definedness_table,
-			      lang_definedness_newfunc,
-			      sizeof (struct lang_definedness_hash_entry),
-			      13))
-    einfo (_("%P%F: can not create hash table: %E\n"));
-
   asneeded_list_head = NULL;
   asneeded_list_tail = &asneeded_list_head;
 }
@@ -1256,7 +1246,6 @@ lang_init (void)
 void
 lang_finish (void)
 {
-  bfd_hash_table_free (&lang_definedness_table);
   output_section_statement_table_free ();
 }
 
@@ -1317,7 +1306,9 @@ lang_memory_region_lookup (const char *const name, bfd_boolean create)
   new_region->name_list.name = xstrdup (name);
   new_region->name_list.next = NULL;
   new_region->next = NULL;
+  new_region->origin_exp = NULL;
   new_region->origin = 0;
+  new_region->length_exp = NULL;
   new_region->length = ~(bfd_size_type) 0;
   new_region->current = 0;
   new_region->last_os = NULL;
@@ -3365,65 +3356,6 @@ open_input_bfds (lang_statement_union_type *s, enum open_bfd_mode mode)
     einfo ("%F");
 }
 
-/* New-function for the definedness hash table.  */
-
-static struct bfd_hash_entry *
-lang_definedness_newfunc (struct bfd_hash_entry *entry,
-			  struct bfd_hash_table *table ATTRIBUTE_UNUSED,
-			  const char *name ATTRIBUTE_UNUSED)
-{
-  struct lang_definedness_hash_entry *ret
-    = (struct lang_definedness_hash_entry *) entry;
-
-  if (ret == NULL)
-    ret = (struct lang_definedness_hash_entry *)
-      bfd_hash_allocate (table, sizeof (struct lang_definedness_hash_entry));
-
-  if (ret == NULL)
-    einfo (_("%P%F: bfd_hash_allocate failed creating symbol %s\n"), name);
-
-  ret->by_object = 0;
-  ret->by_script = 0;
-  ret->iteration = 0;
-  return &ret->root;
-}
-
-/* Called during processing of linker script script expressions.
-   For symbols assigned in a linker script, return a struct describing
-   where the symbol is defined relative to the current expression,
-   otherwise return NULL.  */
-
-struct lang_definedness_hash_entry *
-lang_symbol_defined (const char *name)
-{
-  return ((struct lang_definedness_hash_entry *)
-	  bfd_hash_lookup (&lang_definedness_table, name, FALSE, FALSE));
-}
-
-/* Update the definedness state of NAME.  */
-
-void
-lang_update_definedness (const char *name, struct bfd_link_hash_entry *h)
-{
-  struct lang_definedness_hash_entry *defentry
-    = (struct lang_definedness_hash_entry *)
-    bfd_hash_lookup (&lang_definedness_table, name, TRUE, FALSE);
-
-  if (defentry == NULL)
-    einfo (_("%P%F: bfd_hash_lookup failed creating symbol %s\n"), name);
-
-  /* If the symbol was already defined, and not by a script, then it
-     must be defined by an object file.  */
-  if (!defentry->by_script
-      && h->type != bfd_link_hash_undefined
-      && h->type != bfd_link_hash_common
-      && h->type != bfd_link_hash_new)
-    defentry->by_object = 1;
-
-  defentry->by_script = 1;
-  defentry->iteration = lang_statement_iteration;
-}
-
 /* Add the supplied name to the symbol table as an undefined reference.
    This is a two step process as the symbol table doesn't even exist at
    the time the ld command line is processed.  First we put the name
@@ -4054,7 +3986,12 @@ print_assignment (lang_assignment_statement_type *assignment,
   osec = output_section->bfd_section;
   if (osec == NULL)
     osec = bfd_abs_section_ptr;
-  exp_fold_tree (tree, osec, &print_dot);
+
+  if (assignment->exp->type.node_class != etree_provide)
+    exp_fold_tree (tree, osec, &print_dot);
+  else
+    expld.result.valid_p = FALSE;
+
   if (expld.result.valid_p)
     {
       bfd_vma value;
@@ -4092,7 +4029,10 @@ print_assignment (lang_assignment_statement_type *assignment,
     }
   else
     {
-      minfo ("*undef*   ");
+      if (assignment->exp->type.node_class == etree_provide)
+        minfo ("[!provide]");
+      else
+        minfo ("*undef*   ");
 #ifdef BFD64
       minfo ("        ");
 #endif
@@ -6355,7 +6295,6 @@ lang_final (void)
 
   new_stmt = new_stat (lang_output_statement, stat_ptr);
   new_stmt->name = output_filename;
-
 }
 
 /* Reset the current counters in the regions.  */
@@ -6685,7 +6624,7 @@ lang_process (void)
   open_input_bfds (statement_list.head, OPEN_BFD_NORMAL);
 
 #ifdef ENABLE_PLUGINS
-  if (plugin_active_plugins_p ())
+  if (link_info.lto_plugin_active)
     {
       lang_statement_list_type added;
       lang_statement_list_type files, inputfiles;
@@ -6770,13 +6709,15 @@ lang_process (void)
   /* PR 13683: We must rerun the assignments prior to running garbage
      collection in order to make sure that all symbol aliases are resolved.  */
   lang_do_assignments (lang_mark_phase_enum);
-  expld.phase = lang_first_phase_enum;
 
-  /* Remove unreferenced sections if asked to.  */
-  lang_gc_sections ();
+  lang_do_memory_regions();
+  expld.phase = lang_first_phase_enum;
 
   /* Size up the common data.  */
   lang_common ();
+
+  /* Remove unreferenced sections if asked to.  */
+  lang_gc_sections ();
 
   /* Update wild statements.  */
   update_wild_statements (statement_list.head);
@@ -8031,6 +7972,37 @@ lang_do_version_exports_section (void)
   lreg = lang_new_vers_pattern (NULL, "*", NULL, FALSE);
   lang_register_vers_node (command_line.version_exports_section,
 			   lang_new_vers_node (greg, lreg), NULL);
+}
+
+/* Evaluate LENGTH and ORIGIN parts of MEMORY spec */
+
+static void
+lang_do_memory_regions (void)
+{
+  lang_memory_region_type *r = lang_memory_region_list;
+
+  for (; r != NULL; r = r->next)
+    {
+      if (r->origin_exp)
+      {
+        exp_fold_tree_no_dot (r->origin_exp);
+        if (expld.result.valid_p)
+          {
+            r->origin = expld.result.value;
+            r->current = r->origin;
+          }
+        else
+          einfo (_("%F%P: invalid origin for memory region %s\n"), r->name_list.name);
+      }
+      if (r->length_exp)
+      {
+        exp_fold_tree_no_dot (r->length_exp);
+        if (expld.result.valid_p)
+          r->length = expld.result.value;
+        else
+          einfo (_("%F%P: invalid length for memory region %s\n"), r->name_list.name);
+      }
+    }
 }
 
 void

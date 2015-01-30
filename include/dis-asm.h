@@ -1,6 +1,6 @@
 /* Interface between the opcode library and its callers.
 
-   Copyright (C) 1999-2014 Free Software Foundation, Inc.
+   Copyright (C) 1999-2015 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -236,6 +236,7 @@ extern int print_insn_dlx 		(bfd_vma, disassemble_info *);
 extern int print_insn_epiphany		(bfd_vma, disassemble_info *);
 extern int print_insn_fr30		(bfd_vma, disassemble_info *);
 extern int print_insn_frv		(bfd_vma, disassemble_info *);
+extern int print_insn_ft32  		(bfd_vma, disassemble_info *);
 extern int print_insn_h8300		(bfd_vma, disassemble_info *);
 extern int print_insn_h8300h		(bfd_vma, disassemble_info *);
 extern int print_insn_h8300s		(bfd_vma, disassemble_info *);
@@ -295,6 +296,7 @@ extern int print_insn_tilegx		(bfd_vma, disassemble_info *);
 extern int print_insn_tilepro		(bfd_vma, disassemble_info *);
 extern int print_insn_v850		(bfd_vma, disassemble_info *);
 extern int print_insn_vax		(bfd_vma, disassemble_info *);
+extern int print_insn_visium		(bfd_vma, disassemble_info *);
 extern int print_insn_w65		(bfd_vma, disassemble_info *);
 extern int print_insn_xc16x		(bfd_vma, disassemble_info *);
 extern int print_insn_xgate             (bfd_vma, disassemble_info *);

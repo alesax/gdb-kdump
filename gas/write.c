@@ -1,5 +1,5 @@
 /* write.c - emit .o file
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -1184,6 +1184,11 @@ get_frag_for_reloc (fragS *last_frag,
 	&& r->u.b.r.address < f->fr_address + f->fr_fix)
       return f;
 
+  for (f = seginfo->frchainP->frch_root; f != NULL; f = f->fr_next)
+    if (f->fr_address <= r->u.b.r.address
+	&& r->u.b.r.address <= f->fr_address + f->fr_fix)
+      return f;
+
   as_bad_where (r->file, r->line,
 		_("reloc not within (fixed part of) section"));
   return NULL;
@@ -2304,8 +2309,8 @@ relax_frag (segT segment, fragS *fragP, long stretch)
 /* Relax_align. Advance location counter to next address that has 'alignment'
    lowest order bits all 0s, return size of adjustment made.  */
 static relax_addressT
-relax_align (register relax_addressT address,	/* Address now.  */
-	     register int alignment	/* Alignment (binary).  */)
+relax_align (relax_addressT address,	/* Address now.  */
+	     int alignment	/* Alignment (binary).  */)
 {
   relax_addressT mask;
   relax_addressT new_address;

@@ -1,5 +1,5 @@
 /* tc-arm.c -- Assemble for the ARM
-   Copyright (C) 1994-2014 Free Software Foundation, Inc.
+   Copyright (C) 1994-2015 Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
 	Modified by David Taylor (dtaylor@armltd.co.uk)
 	Cirrus coprocessor mods by Aldy Hernandez (aldyh@redhat.com)
@@ -236,6 +236,8 @@ static const arm_feature_set fpu_neon_ext_fma = ARM_FEATURE (0, FPU_NEON_EXT_FMA
 static const arm_feature_set fpu_vfp_ext_fma = ARM_FEATURE (0, FPU_VFP_EXT_FMA);
 static const arm_feature_set fpu_vfp_ext_armv8 =
   ARM_FEATURE (0, FPU_VFP_EXT_ARMV8);
+static const arm_feature_set fpu_vfp_ext_armv8xd =
+  ARM_FEATURE (0, FPU_VFP_EXT_ARMV8xD);
 static const arm_feature_set fpu_neon_ext_armv8 =
   ARM_FEATURE (0, FPU_NEON_EXT_ARMV8);
 static const arm_feature_set fpu_crypto_ext_armv8 =
@@ -4959,6 +4961,16 @@ parse_ifimm_zero (char **in)
     return FALSE;
 
   ++*in;
+
+  /* Accept #0x0 as a synonym for #0.  */
+  if (strncmp (*in, "0x", 2) == 0)
+    {
+      int val;
+      if (parse_immediate (in, &val, 0, 0, TRUE) == FAIL)
+        return FALSE;
+      return TRUE;
+    }
+
   error_code = atof_generic (in, ".", EXP_CHARS,
                              &generic_floating_point_number);
 
@@ -7251,7 +7263,7 @@ parse_operands (char *str, const unsigned int *pattern, bfd_boolean thumb)
 
 /* Functions for operand encoding.  ARM, then Thumb.  */
 
-#define rotate_left(v, n) (v << n | v >> (32 - n))
+#define rotate_left(v, n) (v << (n & 31) | v >> ((32 - n) & 31))
 
 /* If VAL can be encoded in the immediate field of an ARM instruction,
    return the encoded form.  Otherwise, return FAIL.  */
@@ -14100,8 +14112,12 @@ do_neon_shl_imm (void)
     {
       enum neon_shape rs = neon_select_shape (NS_DDI, NS_QQI, NS_NULL);
       struct neon_type_el et = neon_check_type (2, rs, N_EQK, N_KEY | N_I_ALL);
+      int imm = inst.operands[2].imm;
+
+      constraint (imm < 0 || (unsigned)imm >= et.size,
+		  _("immediate out of range for shift"));
       NEON_ENCODE (IMMED, inst);
-      neon_imm_shift (FALSE, 0, neon_quad (rs), et, inst.operands[2].imm);
+      neon_imm_shift (FALSE, 0, neon_quad (rs), et, imm);
     }
   else
     {
@@ -14132,10 +14148,12 @@ do_neon_qshl_imm (void)
     {
       enum neon_shape rs = neon_select_shape (NS_DDI, NS_QQI, NS_NULL);
       struct neon_type_el et = neon_check_type (2, rs, N_EQK, N_SU_ALL | N_KEY);
+      int imm = inst.operands[2].imm;
 
+      constraint (imm < 0 || (unsigned)imm >= et.size,
+		  _("immediate out of range for shift"));
       NEON_ENCODE (IMMED, inst);
-      neon_imm_shift (TRUE, et.type == NT_unsigned, neon_quad (rs), et,
-		      inst.operands[2].imm);
+      neon_imm_shift (TRUE, et.type == NT_unsigned, neon_quad (rs), et, imm);
     }
   else
     {
@@ -15032,6 +15050,13 @@ do_vfp_nsyn_cvt_fpv8 (enum neon_cvt_flavour flavour,
   int sz, op;
   int rm;
 
+  /* Targets like FPv5-SP-D16 don't support FP v8 instructions with
+     D register operands.  */
+  if (flavour == neon_cvt_flavour_s32_f64
+      || flavour == neon_cvt_flavour_u32_f64)
+    constraint (!ARM_CPU_HAS_FEATURE (cpu_variant, fpu_vfp_ext_armv8),
+		_(BAD_FPU));
+
   set_it_insn_type (OUTSIDE_IT_INSN);
 
   switch (flavour)
@@ -15296,11 +15321,21 @@ do_neon_cvttb_1 (bfd_boolean t)
     }
   else if (neon_check_type (2, rs, N_F16, N_F64 | N_VFP).type != NT_invtype)
     {
+      /* The VCVTB and VCVTT instructions with D-register operands
+         don't work for SP only targets.  */
+      constraint (!ARM_CPU_HAS_FEATURE (cpu_variant, fpu_vfp_ext_armv8),
+		  _(BAD_FPU));
+
       inst.error = NULL;
       do_neon_cvttb_2 (t, /*to=*/TRUE, /*is_double=*/TRUE);
     }
   else if (neon_check_type (2, rs, N_F64 | N_VFP, N_F16).type != NT_invtype)
     {
+      /* The VCVTB and VCVTT instructions with D-register operands
+         don't work for SP only targets.  */
+      constraint (!ARM_CPU_HAS_FEATURE (cpu_variant, fpu_vfp_ext_armv8),
+		  _(BAD_FPU));
+
       inst.error = NULL;
       do_neon_cvttb_2 (t, /*to=*/FALSE, /*is_double=*/TRUE);
     }
@@ -16427,6 +16462,12 @@ do_neon_ldx_stx (void)
 static void
 do_vfp_nsyn_fpv8 (enum neon_shape rs)
 {
+  /* Targets like FPv5-SP-D16 don't support FP v8 instructions with
+     D register operands.  */
+  if (neon_shape_class[rs] == SC_DOUBLE)
+    constraint (!ARM_CPU_HAS_FEATURE (cpu_variant, fpu_vfp_ext_armv8),
+		_(BAD_FPU));
+
   NEON_ENCODE (FPV8, inst);
 
   if (rs == NS_FFF)
@@ -16471,6 +16512,12 @@ do_vrint_1 (enum neon_cvt_mode mode)
 
   if (rs == NS_NULL)
     return;
+
+  /* Targets like FPv5-SP-D16 don't support FP v8 instructions with
+     D register operands.  */
+  if (neon_shape_class[rs] == SC_DOUBLE)
+    constraint (!ARM_CPU_HAS_FEATURE (cpu_variant, fpu_vfp_ext_armv8),
+		_(BAD_FPU));
 
   et = neon_check_type (2, rs, N_EQK | N_VFP, N_F32 | N_F64 | N_KEY | N_VFP);
   if (et.type != NT_invtype)
@@ -17672,9 +17719,9 @@ md_assemble (char *str)
       /* Many Thumb-2 instructions also have Thumb-1 variants, so explicitly
 	 set those bits when Thumb-2 32-bit instructions are seen.  ie.
 	 anything other than bl/blx and v6-M instructions.
-	 This is overly pessimistic for relaxable instructions.  */
-      if (((inst.size == 4 && (inst.instruction & 0xf800e800) != 0xf000e800)
-	   || inst.relax)
+	 The impact of relaxable instructions will be considered later after we
+	 finish all relaxation.  */
+      if ((inst.size == 4 && (inst.instruction & 0xf800e800) != 0xf000e800)
 	  && !(ARM_CPU_HAS_FEATURE (*opcode->tvariant, arm_ext_msr)
 	       || ARM_CPU_HAS_FEATURE (*opcode->tvariant, arm_ext_barrier)))
 	ARM_MERGE_FEATURE_SETS (thumb_arch_used, thumb_arch_used,
@@ -18953,9 +19000,9 @@ static const struct asm_opcode insns[] =
 
   /* FP for ARMv8.  */
 #undef  ARM_VARIANT
-#define ARM_VARIANT   & fpu_vfp_ext_armv8
+#define ARM_VARIANT   & fpu_vfp_ext_armv8xd
 #undef  THUMB_VARIANT
-#define THUMB_VARIANT & fpu_vfp_ext_armv8
+#define THUMB_VARIANT & fpu_vfp_ext_armv8xd
 
   nUF(vseleq, _vseleq, 3, (RVSD, RVSD, RVSD),		vsel),
   nUF(vselvs, _vselvs, 3, (RVSD, RVSD, RVSD),		vsel),
@@ -20508,6 +20555,11 @@ md_convert_frag (bfd *abfd, segT asec ATTRIBUTE_UNUSED, fragS *fragp)
   fixp->fx_file = fragp->fr_file;
   fixp->fx_line = fragp->fr_line;
   fragp->fr_fix += fragp->fr_var;
+
+  /* Set whether we use thumb-2 ISA based on final relaxation results.  */
+  if (thumb_mode && fragp->fr_var == 4 && no_cpu_selected ()
+      && !ARM_CPU_HAS_FEATURE (thumb_arch_used, arm_arch_t2))
+    ARM_MERGE_FEATURE_SETS (arm_arch_used, thumb_arch_used, arm_ext_v6t2);
 }
 
 /* Return the size of a relaxable immediate operand instruction.
@@ -24406,6 +24458,7 @@ static const struct arm_cpu_option_table arm_cpus[] =
   ARM_CPU_OPT ("cortex-r7",	ARM_ARCH_V7R_IDIV,
 						 FPU_ARCH_VFP_V3D16,
 								  "Cortex-R7"),
+  ARM_CPU_OPT ("cortex-m7",	ARM_ARCH_V7EM,	 FPU_NONE,	  "Cortex-M7"),
   ARM_CPU_OPT ("cortex-m4",	ARM_ARCH_V7EM,	 FPU_NONE,	  "Cortex-M4"),
   ARM_CPU_OPT ("cortex-m3",	ARM_ARCH_V7M,	 FPU_NONE,	  "Cortex-M3"),
   ARM_CPU_OPT ("cortex-m1",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M1"),
@@ -24423,6 +24476,14 @@ static const struct arm_cpu_option_table arm_cpus[] =
   /* Marvell processors.  */
   ARM_CPU_OPT ("marvell-pj4",   ARM_FEATURE (ARM_AEXT_V7A | ARM_EXT_MP | ARM_EXT_SEC, 0),
 						FPU_ARCH_VFP_V3D16, NULL),
+  ARM_CPU_OPT ("marvell-whitney", ARM_FEATURE (ARM_AEXT_V7A | ARM_EXT_MP
+					       | ARM_EXT_SEC, 0),
+					       FPU_ARCH_NEON_VFP_V4, NULL),
+  /* APM X-Gene family.  */
+  ARM_CPU_OPT ("xgene1",        ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+	                                                          "APM X-Gene 1"),
+  ARM_CPU_OPT ("xgene2",        ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+	                                                          "APM X-Gene 2"),
 
   { NULL, 0, ARM_ARCH_NONE, ARM_ARCH_NONE, NULL }
 };
@@ -24493,40 +24554,51 @@ struct arm_option_extension_value_table
 {
   char *name;
   size_t name_len;
-  const arm_feature_set value;
+  const arm_feature_set merge_value;
+  const arm_feature_set clear_value;
   const arm_feature_set allowed_archs;
 };
 
 /* The following table must be in alphabetical order with a NULL last entry.
    */
-#define ARM_EXT_OPT(N, V, AA) { N, sizeof (N) - 1, V, AA }
+#define ARM_EXT_OPT(N, M, C, AA) { N, sizeof (N) - 1, M, C, AA }
 static const struct arm_option_extension_value_table arm_extensions[] =
 {
-  ARM_EXT_OPT ("crc",  ARCH_CRC_ARMV8, ARM_FEATURE (ARM_EXT_V8, 0)),
+  ARM_EXT_OPT ("crc",  ARCH_CRC_ARMV8, ARM_FEATURE (0, CRC_EXT_ARMV8),
+			 ARM_FEATURE (ARM_EXT_V8, 0)),
   ARM_EXT_OPT ("crypto", FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+			 ARM_FEATURE (0, FPU_CRYPTO_ARMV8),
 				   ARM_FEATURE (ARM_EXT_V8, 0)),
-  ARM_EXT_OPT ("fp",     FPU_ARCH_VFP_ARMV8,
+  ARM_EXT_OPT ("fp",     FPU_ARCH_VFP_ARMV8, ARM_FEATURE (0, FPU_VFP_ARMV8),
 				   ARM_FEATURE (ARM_EXT_V8, 0)),
   ARM_EXT_OPT ("idiv",	ARM_FEATURE (ARM_EXT_ADIV | ARM_EXT_DIV, 0),
+			ARM_FEATURE (ARM_EXT_ADIV | ARM_EXT_DIV, 0),
 				   ARM_FEATURE (ARM_EXT_V7A | ARM_EXT_V7R, 0)),
-  ARM_EXT_OPT ("iwmmxt",ARM_FEATURE (0, ARM_CEXT_IWMMXT),	ARM_ANY),
-  ARM_EXT_OPT ("iwmmxt2",
-			ARM_FEATURE (0, ARM_CEXT_IWMMXT2),	ARM_ANY),
-  ARM_EXT_OPT ("maverick",
-			ARM_FEATURE (0, ARM_CEXT_MAVERICK),	ARM_ANY),
+  ARM_EXT_OPT ("iwmmxt",ARM_FEATURE (0, ARM_CEXT_IWMMXT),
+			ARM_FEATURE (0, ARM_CEXT_IWMMXT), ARM_ANY),
+  ARM_EXT_OPT ("iwmmxt2", ARM_FEATURE (0, ARM_CEXT_IWMMXT2),
+			ARM_FEATURE (0, ARM_CEXT_IWMMXT2), ARM_ANY),
+  ARM_EXT_OPT ("maverick", ARM_FEATURE (0, ARM_CEXT_MAVERICK),
+			ARM_FEATURE (0, ARM_CEXT_MAVERICK), ARM_ANY),
   ARM_EXT_OPT ("mp",	ARM_FEATURE (ARM_EXT_MP, 0),
+			ARM_FEATURE (ARM_EXT_MP, 0),
 				   ARM_FEATURE (ARM_EXT_V7A | ARM_EXT_V7R, 0)),
   ARM_EXT_OPT ("simd",   FPU_ARCH_NEON_VFP_ARMV8,
+			ARM_FEATURE(0, FPU_NEON_ARMV8),
 				   ARM_FEATURE (ARM_EXT_V8, 0)),
   ARM_EXT_OPT ("os",	ARM_FEATURE (ARM_EXT_OS, 0),
+			ARM_FEATURE (ARM_EXT_OS, 0),
 				   ARM_FEATURE (ARM_EXT_V6M, 0)),
   ARM_EXT_OPT ("sec",	ARM_FEATURE (ARM_EXT_SEC, 0),
+			ARM_FEATURE (ARM_EXT_SEC, 0),
 				   ARM_FEATURE (ARM_EXT_V6K | ARM_EXT_V7A, 0)),
   ARM_EXT_OPT ("virt",	ARM_FEATURE (ARM_EXT_VIRT | ARM_EXT_ADIV
 				     | ARM_EXT_DIV, 0),
+			ARM_FEATURE (ARM_EXT_VIRT, 0),
 				   ARM_FEATURE (ARM_EXT_V7A, 0)),
-  ARM_EXT_OPT ("xscale",ARM_FEATURE (0, ARM_CEXT_XSCALE),	ARM_ANY),
-  { NULL, 0, ARM_ARCH_NONE, ARM_ARCH_NONE }
+  ARM_EXT_OPT ("xscale",ARM_FEATURE (0, ARM_CEXT_XSCALE),
+			ARM_FEATURE (0, ARM_CEXT_XSCALE), ARM_ANY),
+  { NULL, 0, ARM_ARCH_NONE, ARM_ARCH_NONE, ARM_ARCH_NONE }
 };
 #undef ARM_EXT_OPT
 
@@ -24574,6 +24646,8 @@ static const struct arm_option_fpu_value_table arm_fpus[] =
   {"vfpv4",		FPU_ARCH_VFP_V4},
   {"vfpv4-d16",		FPU_ARCH_VFP_V4D16},
   {"fpv4-sp-d16",	FPU_ARCH_VFP_V4_SP_D16},
+  {"fpv5-d16",		FPU_ARCH_VFP_V5D16},
+  {"fpv5-sp-d16",	FPU_ARCH_VFP_V5_SP_D16},
   {"neon-vfpv4",	FPU_ARCH_NEON_VFP_V4},
   {"fp-armv8",		FPU_ARCH_VFP_ARMV8},
   {"neon-fp-armv8",	FPU_ARCH_NEON_VFP_ARMV8},
@@ -24701,9 +24775,9 @@ arm_parse_extension (char *str, const arm_feature_set **opt_p)
 
 	    /* Add or remove the extension.  */
 	    if (adding_value)
-	      ARM_MERGE_FEATURE_SETS (*ext_set, *ext_set, opt->value);
+	      ARM_MERGE_FEATURE_SETS (*ext_set, *ext_set, opt->merge_value);
 	    else
-	      ARM_CLEAR_FEATURE (*ext_set, *ext_set, opt->value);
+	      ARM_CLEAR_FEATURE (*ext_set, *ext_set, opt->clear_value);
 
 	    break;
 	  }
@@ -25091,7 +25165,7 @@ aeabi_set_attribute_string (int tag, const char *value)
 }
 
 /* Set the public EABI object attributes.  */
-static void
+void
 aeabi_set_public_attributes (void)
 {
   int arch;
@@ -25199,8 +25273,10 @@ aeabi_set_public_attributes (void)
 	ARM_CPU_HAS_FEATURE (flags, arm_arch_t2) ? 2 : 1);
 
   /* Tag_VFP_arch.  */
-  if (ARM_CPU_HAS_FEATURE (flags, fpu_vfp_ext_armv8))
-    aeabi_set_attribute_int (Tag_VFP_arch, 7);
+  if (ARM_CPU_HAS_FEATURE (flags, fpu_vfp_ext_armv8xd))
+    aeabi_set_attribute_int (Tag_VFP_arch,
+			     ARM_CPU_HAS_FEATURE (flags, fpu_vfp_ext_d32)
+			     ? 7 : 8);
   else if (ARM_CPU_HAS_FEATURE (flags, fpu_vfp_ext_fma))
     aeabi_set_attribute_int (Tag_VFP_arch,
 			     ARM_CPU_HAS_FEATURE (flags, fpu_vfp_ext_d32)
@@ -25436,9 +25512,10 @@ s_arm_arch_extension (int ignored ATTRIBUTE_UNUSED)
 	  }
 
 	if (adding_value)
-	  ARM_MERGE_FEATURE_SETS (selected_cpu, selected_cpu, opt->value);
+	  ARM_MERGE_FEATURE_SETS (selected_cpu, selected_cpu,
+				  opt->merge_value);
 	else
-	  ARM_CLEAR_FEATURE (selected_cpu, selected_cpu, opt->value);
+	  ARM_CLEAR_FEATURE (selected_cpu, selected_cpu, opt->clear_value);
 
 	mcpu_cpu_opt = &selected_cpu;
 	ARM_MERGE_FEATURE_SETS (cpu_variant, *mcpu_cpu_opt, *mfpu_opt);

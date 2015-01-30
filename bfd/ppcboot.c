@@ -1,5 +1,5 @@
 /* BFD back-end for PPCbug boot records.
-   Copyright (C) 1996-2014 Free Software Foundation, Inc.
+   Copyright (C) 1996-2015 Free Software Foundation, Inc.
    Written by Michael Meissner, Cygnus Support, <meissner@cygnus.com>
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -326,6 +326,8 @@ ppcboot_get_symbol_info (bfd *ignore_abfd ATTRIBUTE_UNUSED,
   bfd_symbol_info (symbol, ret);
 }
 
+#define ppcboot_get_symbol_version_string \
+  _bfd_nosymbols_get_symbol_version_string
 #define ppcboot_bfd_is_target_special_symbol \
   ((bfd_boolean (*) (bfd *, asymbol *)) bfd_false)
 #define ppcboot_bfd_is_local_label_name bfd_generic_is_local_label_name

@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 dnl
-dnl   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2015 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ ACX_LARGEFILE
 
 AC_CHECK_FUNCS(setmode)
 
-ALL_LINGUAS="fr tr sv es id da pt_BR de vi rw ga ms fi nl bg eo ja sr"
+ALL_LINGUAS="fr tr sv es id da pt_BR de vi rw ga ms fi nl bg eo ja sr hu"
 ZW_GNU_GETTEXT_SISTER_DIR
 AM_PO_SUBDIRS
 

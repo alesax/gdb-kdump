@@ -1,6 +1,6 @@
 /* Ada language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2014 Free Software Foundation, Inc.
+   Copyright (C) 1992-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -161,6 +161,8 @@ struct ada_task_info
    if ((s) < (m)) (v) = grow_vect (v, &(s), m, sizeof *(v));
 
 extern void *grow_vect (void *, size_t *, size_t, int);
+
+extern void ada_ensure_varsize_limit (const struct type *type);
 
 extern int ada_get_field_index (const struct type *type,
                                 const char *field_name,

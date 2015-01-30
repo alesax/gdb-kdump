@@ -1,6 +1,6 @@
 # config.bfd
 #
-#   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+#   Copyright (C) 2012-2015 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -127,6 +127,7 @@ spu*)            targ_archs=bfd_spu_arch ;;
 tilegx*)	 targ_archs=bfd_tilegx_arch ;;
 tilepro*)	 targ_archs=bfd_tilepro_arch ;;
 v850*)		 targ_archs="bfd_v850_arch bfd_v850_rh850_arch" ;;
+visium*)	 targ_archs=bfd_visium_arch ;;
 x86_64*)	 targ_archs=bfd_i386_arch ;;
 xtensa*)	 targ_archs=bfd_xtensa_arch ;;
 xgate)		 targ_archs=bfd_xgate_arch ;;
@@ -1627,6 +1628,10 @@ case "${targ}" in
     targ_defvec=tilepro_elf32_vec
     ;;
 
+  ft32*-*-*)
+    targ_defvec=ft32_elf32_vec
+    ;;
+
   v850*-*-*)
     targ_defvec=v850_elf32_vec
     targ_selvecs="v800_elf32_vec"
@@ -1657,6 +1662,10 @@ case "${targ}" in
     targ_defvec=vax_elf32_vec
     ;;
 
+  visium-*-elf)
+    targ_defvec=visium_elf32_vec
+    ;;
+ 
   we32k-*-*)
     targ_defvec=we32k_coff_vec
     ;;

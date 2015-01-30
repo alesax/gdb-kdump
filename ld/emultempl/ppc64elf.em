@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-# Copyright (C) 2002-2014 Free Software Foundation, Inc.
+# Copyright (C) 2002-2015 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -39,7 +39,7 @@ static struct ppc64_elf_params params = { NULL,
 					  &ppc_layout_sections_again,
 					  1, 0, 0,
 					  ${DEFAULT_PLT_STATIC_CHAIN-0}, -1, 0,
-					  0, -1, -1};
+					  0, -1, -1, 0};
 
 /* Fake input file for stubs.  */
 static lang_input_statement_type *stub_file;
@@ -61,9 +61,6 @@ static int no_toc_opt = 0;
 
 /* Whether to sort input toc and got sections.  */
 static int no_toc_sort = 0;
-
-/* Set if individual PLT call stubs should be aligned.  */
-static int plt_stub_align = 0;
 
 static asection *toc_section = 0;
 
@@ -99,6 +96,37 @@ ppc_create_output_section_statements (void)
     params.save_restore_funcs = !link_info.relocatable;
   if (!ppc64_elf_init_stub_bfd (&link_info, &params))
     einfo ("%F%P: can not init BFD: %E\n");
+}
+
+/* Called after opening files but before mapping sections.  */
+
+static void
+ppc_after_open (void)
+{
+  if (stub_file != NULL && link_info.relro && params.object_in_toc)
+    {
+      /* We have a .toc section that might be written to at run time.
+	 Don't put .toc into the .got output section.  */
+      lang_output_section_statement_type *got;
+
+      got = lang_output_section_find (".got");
+      if (got != NULL)
+	{
+	  lang_statement_union_type *s;
+	  for (s = got->children.head; s != NULL; s = s->header.next)
+	    if (s->header.type == lang_wild_statement_enum
+		&& s->wild_statement.filename == NULL)
+	      {
+		struct wildcard_list **i = &s->wild_statement.section_list;
+		while (*i != NULL)
+		  if (strcmp ((*i)->spec.name, ".toc") == 0)
+		    *i = (*i)->next;
+		  else
+		    i = &(*i)->next;
+	      }
+	}
+    }
+  gld${EMULATION_NAME}_after_open ();
 }
 
 /* Move the input section statement at *U which happens to be on LIST
@@ -377,7 +405,9 @@ ppc_add_stub_section (const char *stub_sec_name, asection *input_section)
 						 stub_sec_name, flags);
   if (stub_sec == NULL
       || !bfd_set_section_alignment (stub_file->the_bfd, stub_sec,
-				     plt_stub_align > 5 ? plt_stub_align : 5))
+				     (params.plt_stub_align > 5
+				      ? params.plt_stub_align
+				      : 5)))
     goto err_ret;
 
   output_section = input_section->output_section;
@@ -800,14 +830,14 @@ PARSE_AND_LIST_ARGS_CASES=${PARSE_AND_LIST_ARGS_CASES}'
 	  unsigned long val = strtoul (optarg, &end, 0);
 	  if (*end || val > 8)
 	    einfo (_("%P%F: invalid --plt-align `%s'\''\n"), optarg);
-	  plt_stub_align = val;
+	  params.plt_stub_align = val;
 	}
       else
-	plt_stub_align = 5;
+	params.plt_stub_align = 5;
       break;
 
     case OPTION_NO_PLT_ALIGN:
-      plt_stub_align = 0;
+      params.plt_stub_align = 0;
       break;
 
     case OPTION_STUBSYMS:
@@ -875,8 +905,9 @@ PARSE_AND_LIST_ARGS_CASES=${PARSE_AND_LIST_ARGS_CASES}'
 
 # Put these extra ppc64elf routines in ld_${EMULATION_NAME}_emulation
 #
+LDEMUL_NEW_VERS_PATTERN=gld${EMULATION_NAME}_new_vers_pattern
+LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=ppc_create_output_section_statements
+LDEMUL_AFTER_OPEN=ppc_after_open
 LDEMUL_BEFORE_ALLOCATION=ppc_before_allocation
 LDEMUL_AFTER_ALLOCATION=gld${EMULATION_NAME}_after_allocation
 LDEMUL_FINISH=gld${EMULATION_NAME}_finish
-LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=ppc_create_output_section_statements
-LDEMUL_NEW_VERS_PATTERN=gld${EMULATION_NAME}_new_vers_pattern

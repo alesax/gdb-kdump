@@ -1,6 +1,6 @@
 ## Process this file with automake to generate Makefile.in
 #
-#   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+#   Copyright (C) 2012-2015 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -228,6 +228,7 @@ ALL_EMULATION_SOURCES = \
 	eelf32fr30.c \
 	eelf32frv.c \
 	eelf32frvfd.c \
+	eelf32ft32.c \
 	eelf32i370.c \
 	eelf32ip2k.c \
 	eelf32iq10.c \
@@ -264,6 +265,7 @@ ALL_EMULATION_SOURCES = \
 	eelf32tilegx_be.c \
 	eelf32tilepro.c \
 	eelf32vax.c \
+	eelf32visium.c \
 	eelf32xc16x.c \
 	eelf32xc16xl.c \
 	eelf32xc16xs.c \
@@ -1052,6 +1054,9 @@ eelf32frvfd.c: $(srcdir)/emulparams/elf32frvfd.sh \
   $(srcdir)/emulparams/elf32frv.sh \
   $(ELF_DEPS) $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
 
+eelf32ft32.c: $(srcdir)/emulparams/elf32ft32.sh \
+  $(ELF_GEN_DEPS) $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
+
 eelf32i370.c: $(srcdir)/emulparams/elf32i370.sh \
   $(ELF_DEPS) $(srcdir)/scripttempl/elfi370.sc ${GEN_DEPENDS}
 
@@ -1230,6 +1235,9 @@ eelf32tilepro.c: $(srcdir)/emulparams/elf32tilepro.sh \
 
 eelf32vax.c: $(srcdir)/emulparams/elf32vax.sh \
   $(ELF_DEPS) $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
+
+eelf32visium.c: $(srcdir)/emulparams/elf32visium.sh \
+  $(ELF_DEPS) $(srcdir)/scripttempl/visium.sc ${GEN_DEPENDS}
 
 eelf32xc16x.c: $(srcdir)/emulparams/elf32xc16x.sh \
   $(ELF_DEPS) $(srcdir)/emultempl/needrelax.em \

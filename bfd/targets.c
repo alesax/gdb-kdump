@@ -1,5 +1,5 @@
 /* Generic target-file-type support for the BFD library.
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -363,6 +363,7 @@ BFD_JUMP_TABLE macros.
 .  NAME##_make_empty_symbol, \
 .  NAME##_print_symbol, \
 .  NAME##_get_symbol_info, \
+.  NAME##_get_symbol_version_string, \
 .  NAME##_bfd_is_local_label_name, \
 .  NAME##_bfd_is_target_special_symbol, \
 .  NAME##_get_lineno, \
@@ -384,6 +385,9 @@ BFD_JUMP_TABLE macros.
 .  void        (*_bfd_get_symbol_info)
 .    (bfd *, struct bfd_symbol *, symbol_info *);
 .#define bfd_get_symbol_info(b,p,e) BFD_SEND (b, _bfd_get_symbol_info, (b,p,e))
+.  const char *(*_bfd_get_symbol_version_string)
+.    (bfd *, struct bfd_symbol *, bfd_boolean *);
+.#define bfd_get_symbol_version_string(b,s,h) BFD_SEND (b, _bfd_get_symbol_version_string, (b,s,h))
 .  bfd_boolean (*_bfd_is_local_label_name) (bfd *, const char *);
 .  bfd_boolean (*_bfd_is_target_special_symbol) (bfd *, asymbol *);
 .  alent *     (*_get_lineno) (bfd *, struct bfd_symbol *);
@@ -868,10 +872,12 @@ extern const bfd_target tilegx_elf64_le_vec;
 extern const bfd_target tilepro_elf32_vec;
 extern const bfd_target v800_elf32_vec;
 extern const bfd_target v850_elf32_vec;
+extern const bfd_target ft32_elf32_vec;
 extern const bfd_target vax_aout_1knbsd_vec;
 extern const bfd_target vax_aout_bsd_vec;
 extern const bfd_target vax_aout_nbsd_vec;
 extern const bfd_target vax_elf32_vec;
+extern const bfd_target visium_elf32_vec;
 extern const bfd_target w65_coff_vec;
 extern const bfd_target we32k_coff_vec;
 extern const bfd_target x86_64_coff_vec;
@@ -1373,6 +1379,8 @@ static const bfd_target * const _bfd_target_vector[] =
 #endif
 	&tilepro_elf32_vec,
 
+	&ft32_elf32_vec,
+
 	&v800_elf32_vec,
 	&v850_elf32_vec,
 
@@ -1380,6 +1388,8 @@ static const bfd_target * const _bfd_target_vector[] =
 	&vax_aout_bsd_vec,
 	&vax_aout_nbsd_vec,
 	&vax_elf32_vec,
+
+	&visium_elf32_vec,
 
 	&w65_coff_vec,
 

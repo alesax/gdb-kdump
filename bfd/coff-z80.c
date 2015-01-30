@@ -1,5 +1,5 @@
 /* BFD back-end for Zilog Z80 COFF binaries.
-   Copyright (C) 2005-2014 Free Software Foundation, Inc.
+   Copyright (C) 2005-2015 Free Software Foundation, Inc.
    Contributed by Arnold Metselaar <arnold_m@operamail.com>
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -81,7 +81,7 @@ rtype2howto (arelent *internal, struct internal_reloc *dst)
   switch (dst->r_type)
     {
     default:
-      abort ();
+      internal->howto = NULL;
       break;
     case R_IMM8:
       internal->howto = &r_imm8;

@@ -1,6 +1,6 @@
 /* Language independent support for printing types for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -461,9 +461,9 @@ whatis_exp (char *exp, int show)
     {
       if (((TYPE_CODE (type) == TYPE_CODE_PTR)
 	   || (TYPE_CODE (type) == TYPE_CODE_REF))
-	  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_CLASS))
+	  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT))
         real_type = value_rtti_indirect_type (val, &full, &top, &using_enc);
-      else if (TYPE_CODE (type) == TYPE_CODE_CLASS)
+      else if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
 	real_type = value_rtti_type (val, &full, &top, &using_enc);
     }
 

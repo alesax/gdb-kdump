@@ -1,6 +1,6 @@
 /* Multi-process control for GDB, the GNU debugger.
 
-   Copyright (C) 2008-2014 Free Software Foundation, Inc.
+   Copyright (C) 2008-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -365,6 +365,14 @@ find_inferior_pid (int pid)
       return inf;
 
   return NULL;
+}
+
+/* See inferior.h */
+
+struct inferior *
+find_inferior_ptid (ptid_t ptid)
+{
+  return find_inferior_pid (ptid_get_pid (ptid));
 }
 
 /* See inferior.h.  */

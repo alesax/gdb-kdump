@@ -1,5 +1,5 @@
 /* Multi-process/thread control defs for GDB, the GNU debugger.
-   Copyright (C) 1987-2014 Free Software Foundation, Inc.
+   Copyright (C) 1987-2015 Free Software Foundation, Inc.
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
    
 
@@ -28,6 +28,7 @@ struct symtab;
 #include "ui-out.h"
 #include "inferior.h"
 #include "btrace.h"
+#include "common/vec.h"
 
 /* Frontend view of the thread state.  Possible extensions: stepping,
    finishing, until(ling),...  */
@@ -152,6 +153,10 @@ struct thread_suspend_state
   enum gdb_signal stop_signal;
 };
 
+typedef struct value *value_ptr;
+DEF_VEC_P (value_ptr);
+typedef VEC (value_ptr) value_vec;
+
 struct thread_info
 {
   struct thread_info *next;
@@ -200,6 +205,11 @@ struct thread_info
      adjust_pc_after_break to distinguish a hardware single-step
      SIGTRAP from a breakpoint SIGTRAP.  */
   CORE_ADDR prev_pc;
+
+  /* Did we set the thread stepping a breakpoint instruction?  This is
+     used in conjunction with PREV_PC to decide whether to adjust the
+     PC.  */
+  int stepped_breakpoint;
 
   /* Should we step over breakpoint next time keep_going is called?  */
   int stepping_over_breakpoint;
@@ -259,6 +269,14 @@ struct thread_info
 
   /* Branch trace information for this thread.  */
   struct btrace_thread_info btrace;
+
+  /* Flag which indicates that the stack temporaries should be stored while
+     evaluating expressions.  */
+  int stack_temporaries_enabled;
+
+  /* Values that are stored as temporaries on stack while evaluating
+     expressions.  */
+  value_vec *stack_temporaries;
 };
 
 /* Create an empty thread list, or empty the existing one.  */
@@ -437,6 +455,8 @@ extern void finish_thread_state_cleanup (void *ptid_p);
 /* Commands with a prefix of `thread'.  */
 extern struct cmd_list_element *thread_cmd_list;
 
+extern void thread_command (char *tidstr, int from_tty);
+
 /* Print notices on thread events (attach, detach, etc.), set with
    `set print thread-events'.  */
 extern int print_thread_events;
@@ -459,6 +479,16 @@ extern void prune_threads (void);
 /* Return true if PC is in the stepping range of THREAD.  */
 
 int pc_in_thread_step_range (CORE_ADDR pc, struct thread_info *thread);
+
+extern struct cleanup *enable_thread_stack_temporaries (ptid_t ptid);
+
+extern int thread_stack_temporaries_enabled_p (ptid_t ptid);
+
+extern void push_thread_stack_temporary (ptid_t ptid, struct value *v);
+
+extern struct value *get_last_thread_stack_temporary (ptid_t);
+
+extern int value_in_thread_stack_temporaries (struct value *, ptid_t);
 
 extern struct thread_info *thread_list;
 

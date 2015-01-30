@@ -1,6 +1,6 @@
 /* Base/prototype target for default child (native) targets.
 
-   Copyright (C) 1988-2014 Free Software Foundation, Inc.
+   Copyright (C) 1988-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -412,7 +412,7 @@ inf_child_fileio_readlink (struct target_ops *self,
 {
   /* We support readlink only on systems that also provide a compile-time
      maximum path length (PATH_MAX), at least for now.  */
-#if defined (HAVE_READLINK) && defined (PATH_MAX)
+#if defined (PATH_MAX)
   char buf[PATH_MAX];
   int len;
   char *ret;

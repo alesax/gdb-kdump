@@ -1,5 +1,5 @@
 /* Cell SPU GNU/Linux support -- shared library handling.
-   Copyright (C) 2009-2014 Free Software Foundation, Inc.
+   Copyright (C) 2009-2015 Free Software Foundation, Inc.
 
    Contributed by Ulrich Weigand <uweigand@de.ibm.com>.
 
@@ -389,7 +389,7 @@ spu_bfd_open (char *pathname)
 
 /* Lookup global symbol in a SPE executable.  */
 static struct symbol *
-spu_lookup_lib_symbol (const struct objfile *objfile,
+spu_lookup_lib_symbol (struct objfile *objfile,
 		       const char *name,
 		       const domain_enum domain)
 {

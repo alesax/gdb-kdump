@@ -1,5 +1,5 @@
 /* tc-sh.c -- Assemble code for the Renesas / SuperH SH
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -811,7 +811,7 @@ sh_cons_fix_new (fragS *frag, int off, int size, expressionS *exp,
 /* Clobbers input_line_pointer, checks end-of-line.  */
 /* NBYTES 1=.byte, 2=.word, 4=.long */
 static void
-sh_elf_cons (register int nbytes)
+sh_elf_cons (int nbytes)
 {
   expressionS exp;
 

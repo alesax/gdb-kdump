@@ -1,6 +1,6 @@
 /* Common definitions.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,12 +27,14 @@
 #include "build-gnulib/config.h"
 #endif
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include <alloca.h>
 #include "ansidecl.h"
 #include "libiberty.h"
 #include "pathmax.h"

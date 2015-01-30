@@ -1,5 +1,5 @@
 /* AArch64-specific support for ELF.
-   Copyright (C) 2009-2014 Free Software Foundation, Inc.
+   Copyright (C) 2009-2015 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -187,6 +187,8 @@ _bfd_aarch64_elf_put_addend (bfd *abfd,
   size = bfd_get_reloc_size (howto);
   switch (size)
     {
+    case 0:
+      return status;
     case 2:
       contents = bfd_get_16 (abfd, address);
       break;
@@ -450,7 +452,9 @@ _bfd_aarch64_elf_resolve_relocation (bfd_reloc_code_real_type r_type,
       value = (value + addend) & (bfd_vma) 0xffff0000;
       break;
     case BFD_RELOC_AARCH64_TLSLE_ADD_TPREL_HI12:
-      value = (value + addend) & (bfd_vma) 0xfff000;
+      /* Mask off low 12bits, keep all other high bits, so that the later
+	 generic code could check whehter there is overflow.  */
+      value = (value + addend) & ~(bfd_vma) 0xfff;
       break;
 
     case BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G0:

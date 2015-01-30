@@ -1,6 +1,6 @@
 /* Print and select stack frames for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1776,7 +1776,7 @@ backtrace_command_1 (char *count_exp, int show_locals, int no_filters,
 
 	  QUIT;
 	  pc = get_frame_address_in_block (fi);
-	  find_pc_sect_symtab_via_partial (pc, find_pc_mapped_section (pc));
+	  expand_symtab_containing_pc (pc, find_pc_mapped_section (pc));
 	}
     }
 
@@ -2462,8 +2462,12 @@ return_command (char *retval_exp, int from_tty)
 	confirmed = query (_("%sMake selected stack frame return now? "),
 			   query_prefix);
       else
-	confirmed = query (_("%sMake %s return now? "), query_prefix,
-			   SYMBOL_PRINT_NAME (thisfun));
+	{
+	  if (TYPE_NO_RETURN (thisfun->type))
+	    warning (_("Function does not return normally to caller."));
+	  confirmed = query (_("%sMake %s return now? "), query_prefix,
+			     SYMBOL_PRINT_NAME (thisfun));
+	}
       if (!confirmed)
 	error (_("Not confirmed"));
     }
@@ -2569,7 +2573,6 @@ get_frame_language (void)
     {
       volatile struct gdb_exception ex;
       CORE_ADDR pc = 0;
-      struct symtab *s;
 
       /* We determine the current frame language by looking up its
          associated symtab.  To retrieve this symtab, we use the frame
@@ -2591,9 +2594,10 @@ get_frame_language (void)
 	}
       else
 	{
-	  s = find_pc_symtab (pc);
-	  if (s != NULL)
-	    return s->language;
+	  struct compunit_symtab *cust = find_pc_compunit_symtab (pc);
+
+	  if (cust != NULL)
+	    return compunit_language (cust);
 	}
     }
 

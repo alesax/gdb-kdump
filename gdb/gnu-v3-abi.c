@@ -1,7 +1,7 @@
 /* Abstraction of GNU v3 abi.
    Contributed by Jim Blandy <jimb@redhat.com>
 
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -288,7 +288,7 @@ gnuv3_rtti_type (struct value *value,
   char *atsign;
 
   /* We only have RTTI for class objects.  */
-  if (TYPE_CODE (values_type) != TYPE_CODE_CLASS)
+  if (TYPE_CODE (values_type) != TYPE_CODE_STRUCT)
     return NULL;
 
   /* Java doesn't have RTTI following the C++ ABI.  */
@@ -406,7 +406,7 @@ gnuv3_virtual_fn_field (struct value **value_p,
   struct gdbarch *gdbarch;
 
   /* Some simple sanity checks.  */
-  if (TYPE_CODE (values_type) != TYPE_CODE_CLASS)
+  if (TYPE_CODE (values_type) != TYPE_CODE_STRUCT)
     error (_("Only classes can have virtual functions."));
 
   /* Determine architecture.  */
@@ -1101,7 +1101,7 @@ gnuv3_get_typeid (struct value *value)
 
   /* We check for lval_memory because in the "typeid (type-id)" case,
      the type is passed via a not_lval value object.  */
-  if (TYPE_CODE (type) == TYPE_CODE_CLASS
+  if (TYPE_CODE (type) == TYPE_CODE_STRUCT
       && value_lval_const (value) == lval_memory
       && gnuv3_dynamic_class (type))
     {
@@ -1277,7 +1277,6 @@ gnuv3_pass_by_reference (struct type *type)
 
   /* We're only interested in things that can have methods.  */
   if (TYPE_CODE (type) != TYPE_CODE_STRUCT
-      && TYPE_CODE (type) != TYPE_CODE_CLASS
       && TYPE_CODE (type) != TYPE_CODE_UNION)
     return 0;
 
@@ -1320,13 +1319,15 @@ gnuv3_pass_by_reference (struct type *type)
 	if (TYPE_NFIELDS (fieldtype) == 2)
 	  {
 	    struct type *arg_type = TYPE_FIELD_TYPE (fieldtype, 1);
-	    struct type *arg_target_type;
 
-	    arg_target_type = check_typedef (TYPE_TARGET_TYPE (arg_type));
+	    if (TYPE_CODE (arg_type) == TYPE_CODE_REF)
+	      {
+		struct type *arg_target_type;
 
-	    if (TYPE_CODE (arg_type) == TYPE_CODE_REF
-		&& class_types_same_p (arg_target_type, type))
-	      return 1;
+	        arg_target_type = check_typedef (TYPE_TARGET_TYPE (arg_type));
+		if (class_types_same_p (arg_target_type, type))
+		  return 1;
+	      }
 	  }
       }
 

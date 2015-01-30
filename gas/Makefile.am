@@ -1,6 +1,6 @@
 ## Process this file with automake to generate Makefile.in
 #
-#   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+#   Copyright (C) 2012-2015 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -139,6 +139,7 @@ TARGET_CPU_CFILES = \
 	config/tc-epiphany.c \
 	config/tc-fr30.c \
 	config/tc-frv.c \
+	config/tc-ft32.c \
 	config/tc-h8300.c \
 	config/tc-hppa.c \
 	config/tc-ia64.c \
@@ -185,8 +186,9 @@ TARGET_CPU_CFILES = \
 	config/tc-tic6x.c \
 	config/tc-tilegx.c \
 	config/tc-tilepro.c \
-	config/tc-vax.c \
 	config/tc-v850.c \
+	config/tc-vax.c \
+	config/tc-visium.c \
 	config/tc-xstormy16.c \
 	config/tc-xc16x.c \
 	config/tc-xgate.c \
@@ -211,6 +213,7 @@ TARGET_CPU_HFILES = \
 	config/tc-epiphany.h \
 	config/tc-fr30.h \
 	config/tc-frv.h \
+	config/tc-ft32.h \
 	config/tc-h8300.h \
 	config/tc-hppa.h \
 	config/tc-ia64.h \
@@ -256,8 +259,9 @@ TARGET_CPU_HFILES = \
 	config/tc-tic6x.h \
 	config/tc-tilegx.h \
 	config/tc-tilepro.h \
-	config/tc-vax.h \
 	config/tc-v850.h \
+	config/tc-vax.h \
+	config/tc-visium.h \
 	config/tc-xstormy16.h \
 	config/tc-xc16x.h \
 	config/tc-xgate.h \

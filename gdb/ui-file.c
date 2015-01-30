@@ -1,6 +1,6 @@
 /* UI_FILE - a generic STDIO like output stream.
 
-   Copyright (C) 1999-2014 Free Software Foundation, Inc.
+   Copyright (C) 1999-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -220,6 +220,12 @@ ui_file_write (struct ui_file *file,
 		long length_buf)
 {
   file->to_write (file, buf, length_buf);
+}
+
+void
+ui_file_write_for_put (void *data, const char *buffer, long length_buffer)
+{
+  ui_file_write (data, buffer, length_buffer);
 }
 
 void

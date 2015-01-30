@@ -1,6 +1,6 @@
 /* Scheme interface to types.
 
-   Copyright (C) 2008-2014 Free Software Foundation, Inc.
+   Copyright (C) 2008-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -713,7 +713,7 @@ tyscm_array_1 (SCM self, SCM n1_scm, SCM n2_scm, int is_vector,
       n1 = 0;
     }
 
-  if (n2 < n1)
+  if (n2 < n1 - 1) /* Note: An empty array has n2 == n1 - 1.  */
     {
       gdbscm_out_of_range_error (func_name, SCM_ARG3,
 				 scm_cons (scm_from_long (n1),
@@ -1199,7 +1199,7 @@ gdbscm_field_baseclass_p (SCM self)
   struct field *field = tyscm_field_smob_to_field (f_smob);
   struct type *type = tyscm_field_smob_containing_type (f_smob);
 
-  if (TYPE_CODE (type) == TYPE_CODE_CLASS)
+  if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
     return scm_from_bool (f_smob->field_num < TYPE_N_BASECLASSES (type));
   return SCM_BOOL_F;
 }

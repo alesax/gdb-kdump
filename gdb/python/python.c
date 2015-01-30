@@ -1,6 +1,6 @@
 /* General python/gdb code
 
-   Copyright (C) 2008-2014 Free Software Foundation, Inc.
+   Copyright (C) 2008-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1753,6 +1753,10 @@ message == an error message without a stack will be printed."),
       || gdbpy_initialize_signal_event () < 0
       || gdbpy_initialize_breakpoint_event () < 0
       || gdbpy_initialize_continue_event () < 0
+      || gdbpy_initialize_inferior_call_pre_event () < 0
+      || gdbpy_initialize_inferior_call_post_event () < 0
+      || gdbpy_initialize_register_changed_event () < 0
+      || gdbpy_initialize_memory_changed_event () < 0
       || gdbpy_initialize_exited_event () < 0
       || gdbpy_initialize_thread_event () < 0
       || gdbpy_initialize_new_objfile_event ()  < 0
@@ -1952,6 +1956,14 @@ a boolean indicating if name is a field of the current implied argument\n\
     METH_VARARGS | METH_KEYWORDS,
     "lookup_global_symbol (name [, domain]) -> symbol\n\
 Return the symbol corresponding to the given name (or None)." },
+
+  { "lookup_objfile", (PyCFunction) gdbpy_lookup_objfile,
+    METH_VARARGS | METH_KEYWORDS,
+    "lookup_objfile (name, [by_build_id]) -> objfile\n\
+Look up the specified objfile.\n\
+If by_build_id is True, the objfile is looked up by using name\n\
+as its build id." },
+
   { "block_for_pc", gdbpy_block_for_pc, METH_VARARGS,
     "Return the block containing the given pc value, or None." },
   { "solib_name", gdbpy_solib_name, METH_VARARGS,

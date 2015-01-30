@@ -1,3 +1,30 @@
+2015-01-28  James Bowman  <james.bowman@ftdichip.com>
+
+	* common.h (EM_FT32): Define.
+	* ft32.h: New file.
+
+2015-01-09  Anthony Green  <green@moxielogic.com>
+
+	* common.h (EM_MOXIE): Redefine to official number.
+	(EM_MOXIE_OLD): Define (from old number).
+
+2015-01-01  Alan Modra  <amodra@gmail.com>
+
+	Update year range in copyright notice of all files.
+
+2014-12-25  Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	* arm.h: New AEABI_FP_number_model_* and AEABI_VFP_args_* enum values.
+
+2014-12-06  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* common.h (EM_VISIUM): Define.
+	* visium.h: New file.
+
+2014-11-13  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* x86-64.h (R_X86_64_GOTPLT64): Mark it obsolete.
+
 2014-10-17  Jose E. Marchesi  <jose.marchesi@oracle.com>
 
 	* sparc.h (ELF_SPARC_HWCAP2_VIS3B): Documentation improved.
@@ -2012,7 +2039,7 @@
 
 For older changes see ChangeLog-9103
 
-Copyright (C) 2004-2014 Free Software Foundation, Inc.
+Copyright (C) 2004-2015 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

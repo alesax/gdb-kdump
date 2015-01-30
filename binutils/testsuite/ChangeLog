@@ -1,3 +1,16 @@
+2015-01-01  Alan Modra  <amodra@gmail.com>
+
+	Update year range in copyright notice of all files.
+
+2014-12-26  Alan Modra  <amodra@gmail.com>
+
+	* binutils-all/strip-11.d: New test.
+	* binutils-all/objcopy.exp: Run it.
+
+2014-12-06  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* binutils-all/objcopy.exp: Skip strip-10 for Visium.
+
 2014-09-12  Andrew Bennett  <andrew.bennett@imgtec.com>
 
 	* binutils-all/objcopy.exp: Add mips*-img-elf* target triple.
@@ -360,7 +373,7 @@
 
 For older changes see ChangeLog-0411
 
-Copyright (C) 2012-2014 Free Software Foundation, Inc.
+Copyright (C) 2012-2015 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

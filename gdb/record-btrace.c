@@ -1,6 +1,6 @@
 /* Branch trace support for GDB, the GNU debugger.
 
-   Copyright (C) 2013-2014 Free Software Foundation, Inc.
+   Copyright (C) 2013-2015 Free Software Foundation, Inc.
 
    Contributed by Intel Corp. <markus.t.metzger@intel.com>
 
@@ -556,7 +556,7 @@ btrace_call_history_src_line (struct ui_out *uiout,
     return;
 
   ui_out_field_string (uiout, "file",
-		       symtab_to_filename_for_display (sym->symtab));
+		       symtab_to_filename_for_display (symbol_symtab (sym)));
 
   begin = bfun->lbegin;
   end = bfun->lend;
@@ -1662,7 +1662,7 @@ record_btrace_step_thread (struct thread_info *tp)
       if (replay == NULL)
 	return btrace_step_no_history ();
 
-      inf = find_inferior_pid (ptid_get_pid (tp->ptid));
+      inf = find_inferior_ptid (tp->ptid);
       aspace = inf->aspace;
 
       /* Determine the end of the instruction trace.  */
@@ -1699,7 +1699,7 @@ record_btrace_step_thread (struct thread_info *tp)
       if (replay == NULL)
 	replay = record_btrace_start_replaying (tp);
 
-      inf = find_inferior_pid (ptid_get_pid (tp->ptid));
+      inf = find_inferior_ptid (tp->ptid);
       aspace = inf->aspace;
 
       for (;;)

@@ -1,5 +1,5 @@
 /* input_scrub.c - Break up input buffers into whole numbers of lines.
-   Copyright (C) 1987-2014 Free Software Foundation, Inc.
+   Copyright (C) 1987-2015 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -137,7 +137,7 @@ static struct input_save *next_saved_file;
 static struct input_save *
 input_scrub_push (char *saved_position)
 {
-  register struct input_save *saved;
+  struct input_save *saved;
 
   saved = (struct input_save *) xmalloc (sizeof *saved);
 
@@ -311,7 +311,7 @@ input_scrub_close (void)
 char *
 input_scrub_next_buffer (char **bufp)
 {
-  register char *limit;		/*->just after last char of buffer.  */
+  char *limit;		/*->just after last char of buffer.  */
 
   if (sb_index != (size_t) -1)
     {
@@ -354,7 +354,7 @@ input_scrub_next_buffer (char **bufp)
 				       + partial_size);
   if (limit)
     {
-      register char *p;		/* Find last newline.  */
+      char *p;		/* Find last newline.  */
       /* Terminate the buffer to avoid confusing TC_EOL_IN_INSN.  */
       *limit = '\0';
       for (p = limit - 1; *p != '\n' || TC_EOL_IN_INSN (p); --p)

@@ -1,5 +1,5 @@
 /* ar.c - Archive modify and extract.
-   Copyright (C) 1991-2014 Free Software Foundation, Inc.
+   Copyright (C) 1991-2015 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -691,6 +691,7 @@ main (int argc, char **argv)
 
   program_name = argv[0];
   xmalloc_set_program_name (program_name);
+  bfd_set_error_program_name (program_name);
 #if BFD_SUPPORTS_PLUGINS
   bfd_plugin_set_program_name (program_name);
 #endif
@@ -1033,6 +1034,15 @@ extract_file (bfd *abfd)
   bfd_size_type ncopied = 0;
   bfd_size_type size;
   struct stat buf;
+
+  /* PR binutils/17533: Do not allow directory traversal
+     outside of the current directory tree.  */
+  if (! is_valid_archive_path (bfd_get_filename (abfd)))
+    {
+      non_fatal (_("illegal pathname found in archive member: %s"),
+		 bfd_get_filename (abfd));
+      return;
+    }
 
   if (bfd_stat_arch_elt (abfd, &buf) != 0)
     /* xgettext:c-format */

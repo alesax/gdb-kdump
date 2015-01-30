@@ -1,5 +1,5 @@
 /* Data structures associated with breakpoints in GDB.
-   Copyright (C) 1992-2014 Free Software Foundation, Inc.
+   Copyright (C) 1992-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -193,12 +193,6 @@ enum enable_state
 			    automatically enabled and reset when the
 			    call "lands" (either completes, or stops
 			    at another eventpoint).  */
-    bp_permanent	 /* There is a breakpoint instruction
-			    hard-wired into the target's code.  Don't
-			    try to write another breakpoint
-			    instruction on top of it, or restore its
-			    value.  Step over it using the
-			    architecture's SKIP_INSN macro.  */
   };
 
 
@@ -375,6 +369,13 @@ struct bp_location
   
   /* Nonzero if this breakpoint is now inserted.  */
   char inserted;
+
+  /* Nonzero if this is a permanent breakpoint.  There is a breakpoint
+     instruction hard-wired into the target's code.  Don't try to
+     write another breakpoint instruction on top of it, or restore its
+     value.  Step over it using the architecture's
+     gdbarch_skip_permanent_breakpoint method.  */
+  char permanent;
 
   /* Nonzero if this is not the first breakpoint in the list
      for the given address.  location of tracepoint can _never_
@@ -1129,6 +1130,11 @@ extern int regular_breakpoint_inserted_here_p (struct address_space *,
 extern int software_breakpoint_inserted_here_p (struct address_space *, 
 						CORE_ADDR);
 
+/* Return non-zero iff there is a hardware breakpoint inserted at
+   PC.  */
+extern int hardware_breakpoint_inserted_here_p (struct address_space *,
+						CORE_ADDR);
+
 /* Check whether any location of BP is inserted at PC.  */
 
 extern int breakpoint_has_location_inserted_here (struct breakpoint *bp,
@@ -1143,9 +1149,6 @@ extern int single_step_breakpoint_inserted_here_p (struct address_space *,
 extern int hardware_watchpoint_inserted_in_range (struct address_space *,
 						  CORE_ADDR addr,
 						  ULONGEST len);
-
-extern int breakpoint_thread_match (struct address_space *, 
-				    CORE_ADDR, ptid_t);
 
 /* Returns true if {ASPACE1,ADDR1} and {ASPACE2,ADDR2} represent the
    same breakpoint location.  In most targets, this can only be true

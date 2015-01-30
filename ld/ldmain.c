@@ -1,5 +1,5 @@
 /* Main program of GNU linker.
-   Copyright (C) 1991-2014 Free Software Foundation, Inc.
+   Copyright (C) 1991-2015 Free Software Foundation, Inc.
    Written by Steve Chamberlain steve@cygnus.com
 
    This file is part of the GNU Binutils.
@@ -297,6 +297,7 @@ main (int argc, char **argv)
   config.maxpagesize = bfd_emul_get_maxpagesize (default_target);
   config.commonpagesize = bfd_emul_get_commonpagesize (default_target);
   lang_init ();
+  ldexp_init ();
   ldemul_before_parse ();
   lang_has_input_file = FALSE;
   parse_args (argc, argv);
@@ -440,6 +441,7 @@ main (int argc, char **argv)
     fprintf (stderr, "lookup = %p val %lx\n", h, h ? h->u.def.value : 1);
   }
 #endif
+  ldexp_finish ();
   lang_finish ();
 
   /* Even if we're producing relocatable output, some non-fatal errors should
@@ -788,7 +790,7 @@ add_archive_element (struct bfd_link_info *info,
      BFD, but we still want to output the original BFD filename.  */
   orig_input = *input;
 #ifdef ENABLE_PLUGINS
-  if (plugin_active_plugins_p () && !no_more_claiming)
+  if (link_info.lto_plugin_active && !no_more_claiming)
     {
       /* We must offer this archive member to the plugins to claim.  */
       const char *filename = (bfd_my_archive (abfd) != NULL

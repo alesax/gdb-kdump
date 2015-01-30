@@ -1,5 +1,5 @@
 /* SPU target-dependent code for GDB, the GNU debugger.
-   Copyright (C) 2006-2014 Free Software Foundation, Inc.
+   Copyright (C) 2006-2015 Free Software Foundation, Inc.
 
    Contributed by Ulrich Weigand <uweigand@de.ibm.com>.
    Based on a port by Sid Manning <sid@us.ibm.com>.
@@ -1953,7 +1953,7 @@ static void
 spu_catch_start (struct objfile *objfile)
 {
   struct bound_minimal_symbol minsym;
-  struct symtab *symtab;
+  struct compunit_symtab *cust;
   CORE_ADDR pc;
   char buf[32];
 
@@ -1978,16 +1978,17 @@ spu_catch_start (struct objfile *objfile)
   /* If we have debugging information, try to use it -- this
      will allow us to properly skip the prologue.  */
   pc = BMSYMBOL_VALUE_ADDRESS (minsym);
-  symtab = find_pc_sect_symtab (pc, MSYMBOL_OBJ_SECTION (minsym.objfile,
-							 minsym.minsym));
-  if (symtab != NULL)
+  cust
+    = find_pc_sect_compunit_symtab (pc, MSYMBOL_OBJ_SECTION (minsym.objfile,
+							     minsym.minsym));
+  if (cust != NULL)
     {
-      const struct blockvector *bv = BLOCKVECTOR (symtab);
+      const struct blockvector *bv = COMPUNIT_BLOCKVECTOR (cust);
       struct block *block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
       struct symbol *sym;
       struct symtab_and_line sal;
 
-      sym = lookup_block_symbol (block, "main", VAR_DOMAIN);
+      sym = block_lookup_symbol (block, "main", VAR_DOMAIN);
       if (sym)
 	{
 	  fixup_symbol_section (sym, objfile);

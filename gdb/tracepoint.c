@@ -1,6 +1,6 @@
 /* Tracing functionality for remote targets in custom GDB protocol
 
-   Copyright (C) 1997-2014 Free Software Foundation, Inc.
+   Copyright (C) 1997-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -2739,7 +2739,7 @@ scope_info (char *args, int from_tty)
 	  if (symname == NULL || *symname == '\0')
 	    continue;		/* Probably botched, certainly useless.  */
 
-	  gdbarch = get_objfile_arch (SYMBOL_SYMTAB (sym)->objfile);
+	  gdbarch = symbol_arch (sym);
 
 	  printf_filtered ("Symbol %s is ", symname);
 

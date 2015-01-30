@@ -1,5 +1,5 @@
 /* read.c - read a source file -
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -557,10 +557,11 @@ pobegin (void)
   cfi_pop_insert ();
 }
 
-#define HANDLE_CONDITIONAL_ASSEMBLY()					\
+#define HANDLE_CONDITIONAL_ASSEMBLY(num_read)				\
   if (ignore_input ())							\
     {									\
-      char *eol = find_end_of_line (input_line_pointer, flag_m68k_mri); \
+      char *eol = find_end_of_line (input_line_pointer - (num_read),	\
+				    flag_m68k_mri);			\
       input_line_pointer = (input_line_pointer <= buffer_limit		\
 			    && eol >= buffer_limit)			\
 			   ? buffer_limit				\
@@ -834,7 +835,7 @@ read_a_source_file (char *name)
 		      char *line_start = input_line_pointer;
 		      int mri_line_macro;
 
-		      HANDLE_CONDITIONAL_ASSEMBLY ();
+		      HANDLE_CONDITIONAL_ASSEMBLY (0);
 
 		      c = get_symbol_end ();
 
@@ -905,7 +906,7 @@ read_a_source_file (char *name)
 	  if (is_name_beginner (c))
 	    {
 	      /* Want user-defined label or pseudo/opcode.  */
-	      HANDLE_CONDITIONAL_ASSEMBLY ();
+	      HANDLE_CONDITIONAL_ASSEMBLY (1);
 
 	      s = --input_line_pointer;
 	      c = get_symbol_end ();	/* name's delimiter.  */
@@ -1119,7 +1120,7 @@ read_a_source_file (char *name)
 	      /* local label  ("4:")  */
 	      char *backup = input_line_pointer;
 
-	      HANDLE_CONDITIONAL_ASSEMBLY ();
+	      HANDLE_CONDITIONAL_ASSEMBLY (1);
 
 	      temp = c - '0';
 
@@ -1266,7 +1267,7 @@ read_a_source_file (char *name)
 	      continue;
 	    }
 
-	  HANDLE_CONDITIONAL_ASSEMBLY ();
+	  HANDLE_CONDITIONAL_ASSEMBLY (1);
 
 #ifdef tc_unrecognized_line
 	  if (tc_unrecognized_line (c))
@@ -1578,7 +1579,7 @@ s_align_ptwo (int arg)
 
 /* Switch in and out of alternate macro mode.  */
 
-void
+static void
 s_altmacro (int on)
 {
   demand_empty_rest_of_line ();
@@ -1599,7 +1600,7 @@ s_altmacro (int on)
    If a symbol name could not be read, the routine issues an error
    messages, skips to the end of the line and returns NULL.  */
 
-static char *
+char *
 read_symbol_name (void)
 {
   char * name;
@@ -3983,7 +3984,7 @@ s_rva (int size)
 
 /* .reloc offset, reloc_name, symbol+addend.  */
 
-void
+static void
 s_reloc (int ignore ATTRIBUTE_UNUSED)
 {
   char *stop = NULL;
@@ -3992,6 +3993,14 @@ s_reloc (int ignore ATTRIBUTE_UNUSED)
   char *r_name;
   int c;
   struct reloc_list *reloc;
+  struct _bfd_rel { char *name; bfd_reloc_code_real_type code; };
+  static struct _bfd_rel bfd_relocs[] = {
+    { "NONE", BFD_RELOC_NONE },
+    { "8", BFD_RELOC_8 },
+    { "16", BFD_RELOC_16 },
+    { "32", BFD_RELOC_32 },
+    { "64", BFD_RELOC_64 }
+  };
 
   reloc = (struct reloc_list *) xmalloc (sizeof (*reloc));
 
@@ -4034,7 +4043,20 @@ s_reloc (int ignore ATTRIBUTE_UNUSED)
   SKIP_WHITESPACE ();
   r_name = input_line_pointer;
   c = get_symbol_end ();
-  reloc->u.a.howto = bfd_reloc_name_lookup (stdoutput, r_name);
+  if (strncasecmp (r_name, "BFD_RELOC_", 10) == 0)
+    {
+      unsigned int i;
+
+      for (reloc->u.a.howto = NULL, i = 0; i < ARRAY_SIZE (bfd_relocs); i++)
+	if (strcasecmp (r_name + 10, bfd_relocs[i].name) == 0)
+	  {
+	    reloc->u.a.howto = bfd_reloc_type_lookup (stdoutput,
+						      bfd_relocs[i].code);
+	    break;
+	  }
+    }
+  else
+    reloc->u.a.howto = bfd_reloc_name_lookup (stdoutput, r_name);
   *input_line_pointer = c;
   if (reloc->u.a.howto == NULL)
     {
@@ -6138,7 +6160,7 @@ _find_end_of_line (char *s, int mri_string, int insn ATTRIBUTE_UNUSED,
     }
   if (inquote)
     as_warn (_("missing closing `%c'"), inquote);
-  if (inescape)
+  if (inescape && !ignore_input ())
     as_warn (_("stray `\\'"));
   return s;
 }

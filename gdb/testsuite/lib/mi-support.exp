@@ -1,4 +1,4 @@
-# Copyright 1999-2014 Free Software Foundation, Inc.
+# Copyright 1999-2015 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -191,7 +191,7 @@ proc default_mi_gdb_start { args } {
 	    return -1
 	}
     }
-    set gdb_spawn_id -1
+    set gdb_spawn_id $res
 
     # FIXME: mi output does not go through pagers, so these can be removed.
     # force the height to "unlimited", so no pagers get used

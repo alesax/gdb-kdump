@@ -1,6 +1,6 @@
 /* General utility routines for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1112,6 +1112,23 @@ gdb_print_host_address (const void *addr, struct ui_file *stream)
 {
   fprintf_filtered (stream, "%s", host_address_to_string (addr));
 }
+
+/* See utils.h.  */
+
+char *
+make_hex_string (const gdb_byte *data, size_t length)
+{
+  char *result = xmalloc (length * 2 + 1);
+  char *p;
+  size_t i;
+
+  p = result;
+  for (i = 0; i < length; ++i)
+    p += xsnprintf (p, 3, "%02x", data[i]);
+  *p = '\0';
+  return result;
+}
+
 
 
 /* A cleanup function that calls regfree.  */
@@ -1181,12 +1198,11 @@ compile_rx_or_error (regex_t *pattern, const char *rx, const char *message)
 static int ATTRIBUTE_PRINTF (1, 0)
 defaulted_query (const char *ctlstr, const char defchar, va_list args)
 {
-  int answer;
   int ans2;
   int retval;
   int def_value;
   char def_answer, not_def_answer;
-  char *y_string, *n_string, *question;
+  char *y_string, *n_string, *question, *prompt;
   /* Used to add duration we waited for user to respond to
      prompt_for_continue_wait_time.  */
   struct timeval prompt_started, prompt_ended, prompt_delta;
@@ -1246,62 +1262,31 @@ defaulted_query (const char *ctlstr, const char defchar, va_list args)
 
   /* Format the question outside of the loop, to avoid reusing args.  */
   question = xstrvprintf (ctlstr, args);
+  prompt = xstrprintf (_("%s%s(%s or %s) %s"),
+		      annotation_level > 1 ? "\n\032\032pre-query\n" : "",
+		      question, y_string, n_string,
+		      annotation_level > 1 ? "\n\032\032query\n" : "");
+  xfree (question);
 
   /* Used for calculating time spend waiting for user.  */
   gettimeofday (&prompt_started, NULL);
 
   while (1)
     {
-      wrap_here ("");		/* Flush any buffered output.  */
+      char *response, answer;
+
       gdb_flush (gdb_stdout);
+      response = gdb_readline_wrapper (prompt);
 
-      if (annotation_level > 1)
-	printf_filtered (("\n\032\032pre-query\n"));
-
-      fputs_filtered (question, gdb_stdout);
-      printf_filtered (_("(%s or %s) "), y_string, n_string);
-
-      if (annotation_level > 1)
-	printf_filtered (("\n\032\032query\n"));
-
-      wrap_here ("");
-      gdb_flush (gdb_stdout);
-
-      answer = fgetc (stdin);
-
-      /* We expect fgetc to block until a character is read.  But
-         this may not be the case if the terminal was opened with
-         the NONBLOCK flag.  In that case, if there is nothing to
-         read on stdin, fgetc returns EOF, but also sets the error
-         condition flag on stdin and errno to EAGAIN.  With a true
-         EOF, stdin's error condition flag is not set.
-
-         A situation where this behavior was observed is a pseudo
-         terminal on AIX.  */
-      while (answer == EOF && ferror (stdin) && errno == EAGAIN)
-        {
-          /* Not a real EOF.  Wait a little while and try again until
-             we read something.  */
-          clearerr (stdin);
-          gdb_usleep (10000);
-          answer = fgetc (stdin);
-        }
-
-      clearerr (stdin);		/* in case of C-d */
-      if (answer == EOF)	/* C-d */
+      if (response == NULL)	/* C-d  */
 	{
 	  printf_filtered ("EOF [assumed %c]\n", def_answer);
 	  retval = def_value;
 	  break;
 	}
-      /* Eat rest of input line, to EOF or newline.  */
-      if (answer != '\n')
-	do
-	  {
-	    ans2 = fgetc (stdin);
-	    clearerr (stdin);
-	  }
-	while (ans2 != EOF && ans2 != '\n' && ans2 != '\r');
+
+      answer = response[0];
+      xfree (response);
 
       if (answer >= 'a')
 	answer -= 040;
@@ -1316,8 +1301,7 @@ defaulted_query (const char *ctlstr, const char defchar, va_list args)
          specify the required input or have it default by entering
          nothing.  */
       if (answer == def_answer
-	  || (defchar != '\0' &&
-	      (answer == '\n' || answer == '\r' || answer == EOF)))
+	  || (defchar != '\0' && answer == '\0'))
 	{
 	  retval = def_value;
 	  break;
@@ -1333,7 +1317,7 @@ defaulted_query (const char *ctlstr, const char defchar, va_list args)
   timeval_add (&prompt_for_continue_wait_time,
                &prompt_for_continue_wait_time, &prompt_delta);
 
-  xfree (question);
+  xfree (prompt);
   if (annotation_level > 1)
     printf_filtered (("\n\032\032post-query\n"));
   return retval;
@@ -2868,83 +2852,47 @@ string_to_core_addr (const char *my_string)
 char *
 gdb_realpath (const char *filename)
 {
-  /* Method 1: The system has a compile time upper bound on a filename
-     path.  Use that and realpath() to canonicalize the name.  This is
-     the most common case.  Note that, if there isn't a compile time
-     upper bound, you want to avoid realpath() at all costs.  */
-#if defined (HAVE_REALPATH) && defined (PATH_MAX)
-  {
-    char buf[PATH_MAX];
-    const char *rp = realpath (filename, buf);
+/* On most hosts, we rely on canonicalize_file_name to compute
+   the FILENAME's realpath.
 
-    if (rp == NULL)
-      rp = filename;
-    return xstrdup (rp);
-  }
-#endif /* HAVE_REALPATH */
+   But the situation is slightly more complex on Windows, due to some
+   versions of GCC which were reported to generate paths where
+   backlashes (the directory separator) were doubled.  For instance:
+      c:\\some\\double\\slashes\\dir
+   ... instead of ...
+      c:\some\double\slashes\dir
+   Those double-slashes were getting in the way when comparing paths,
+   for instance when trying to insert a breakpoint as follow:
+      (gdb) b c:/some/double/slashes/dir/foo.c:4
+      No source file named c:/some/double/slashes/dir/foo.c:4.
+      (gdb) b c:\some\double\slashes\dir\foo.c:4
+      No source file named c:\some\double\slashes\dir\foo.c:4.
+   To prevent this from happening, we need this function to always
+   strip those extra backslashes.  While canonicalize_file_name does
+   perform this simplification, it only works when the path is valid.
+   Since the simplification would be useful even if the path is not
+   valid (one can always set a breakpoint on a file, even if the file
+   does not exist locally), we rely instead on GetFullPathName to
+   perform the canonicalization.  */
 
-  /* Method 2: The host system (i.e., GNU) has the function
-     canonicalize_file_name() which malloc's a chunk of memory and
-     returns that, use that.  */
-#if defined(HAVE_CANONICALIZE_FILE_NAME)
-  {
-    char *rp = canonicalize_file_name (filename);
-
-    if (rp == NULL)
-      return xstrdup (filename);
-    else
-      return rp;
-  }
-#endif
-
-  /* FIXME: cagney/2002-11-13:
-
-     Method 2a: Use realpath() with a NULL buffer.  Some systems, due
-     to the problems described in method 3, have modified their
-     realpath() implementation so that it will allocate a buffer when
-     NULL is passed in.  Before this can be used, though, some sort of
-     configure time test would need to be added.  Otherwize the code
-     will likely core dump.  */
-
-  /* Method 3: Now we're getting desperate!  The system doesn't have a
-     compile time buffer size and no alternative function.  Query the
-     OS, using pathconf(), for the buffer limit.  Care is needed
-     though, some systems do not limit PATH_MAX (return -1 for
-     pathconf()) making it impossible to pass a correctly sized buffer
-     to realpath() (it could always overflow).  On those systems, we
-     skip this.  */
-#if defined (HAVE_REALPATH) && defined (_PC_PATH_MAX) && defined(HAVE_ALLOCA)
-  {
-    /* Find out the max path size.  */
-    long path_max = pathconf ("/", _PC_PATH_MAX);
-
-    if (path_max > 0)
-      {
-	/* PATH_MAX is bounded.  */
-	char *buf = alloca (path_max);
-	char *rp = realpath (filename, buf);
-
-	return xstrdup (rp ? rp : filename);
-      }
-  }
-#endif
-
-  /* The MS Windows method.  If we don't have realpath, we assume we
-     don't have symlinks and just canonicalize to a Windows absolute
-     path.  GetFullPath converts ../ and ./ in relative paths to
-     absolute paths, filling in current drive if one is not given
-     or using the current directory of a specified drive (eg, "E:foo").
-     It also converts all forward slashes to back slashes.  */
-  /* The file system is case-insensitive but case-preserving.
-     So we do not lowercase the path.  Otherwise, we might not
-     be able to display the original casing in a given path.  */
 #if defined (_WIN32)
   {
     char buf[MAX_PATH];
     DWORD len = GetFullPathName (filename, MAX_PATH, buf, NULL);
 
+    /* The file system is case-insensitive but case-preserving.
+       So it is important we do not lowercase the path.  Otherwise,
+       we might not be able to display the original casing in a given
+       path.  */
     if (len > 0 && len < MAX_PATH)
       return xstrdup (buf);
+  }
+#else
+  {
+    char *rp = canonicalize_file_name (filename);
+
+    if (rp != NULL)
+      return rp;
   }
 #endif
 
@@ -3038,23 +2986,6 @@ align_down (ULONGEST v, int n)
   /* Check that N is really a power of two.  */
   gdb_assert (n && (n & (n-1)) == 0);
   return (v & -n);
-}
-
-/* See utils.h.  */
-
-LONGEST
-gdb_sign_extend (LONGEST value, int bit)
-{
-  gdb_assert (bit >= 1 && bit <= 8 * sizeof (LONGEST));
-
-  if (((value >> (bit - 1)) & 1) != 0)
-    {
-      LONGEST signbit = ((LONGEST) 1) << (bit - 1);
-
-      value = (value ^ signbit) - signbit;
-    }
-
-  return value;
 }
 
 /* Allocation function for the libiberty hash table which uses an
@@ -3327,41 +3258,43 @@ make_bpstat_clear_actions_cleanup (void)
 int
 producer_is_gcc_ge_4 (const char *producer)
 {
-  const char *cs;
   int major, minor;
-
-  if (producer == NULL)
-    {
-      /* For unknown compilers expect their behavior is not compliant.  For GCC
-	 this case can also happen for -gdwarf-4 type units supported since
-	 gcc-4.5.  */
-
-      return -1;
-    }
-
-  /* Skip any identifier after "GNU " - such as "C++" or "Java".  */
-
-  if (strncmp (producer, "GNU ", strlen ("GNU ")) != 0)
-    {
-      /* For non-GCC compilers expect their behavior is not compliant.  */
-
-      return -1;
-    }
-  cs = &producer[strlen ("GNU ")];
-  while (*cs && !isdigit (*cs))
-    cs++;
-  if (sscanf (cs, "%d.%d", &major, &minor) != 2)
-    {
-      /* Not recognized as GCC.  */
-
-      return -1;
-    }
-
+  major = producer_is_gcc (producer, &minor);
   if (major < 4)
     return -1;
   if (major > 4)
     return INT_MAX;
   return minor;
+}
+
+/* Returns the major version number if the given PRODUCER string is GCC and
+   sets the MINOR version.  Returns -1 if the given PRODUCER is NULL or it
+   isn't GCC.  */
+int
+producer_is_gcc (const char *producer, int *minor)
+{
+  const char *cs;
+  int major;
+
+  if (producer != NULL && strncmp (producer, "GNU ", strlen ("GNU ")) == 0)
+    {
+      /* Skip any identifier after "GNU " - such as "C11" "C++" or "Java".
+	 A full producer string might look like:
+	 "GNU C 4.7.2"
+	 "GNU Fortran 4.8.2 20140120 (Red Hat 4.8.2-16) -mtune=generic ..."
+	 "GNU C++14 5.0.0 20150123 (experimental)"
+      */
+      cs = &producer[strlen ("GNU ")];
+      while (*cs && !isspace (*cs))
+        cs++;
+      if (*cs && isspace (*cs))
+        cs++;
+      if (sscanf (cs, "%d.%d", &major, minor) == 2)
+	return major;
+    }
+
+  /* Not recognized as GCC.  */
+  return -1;
 }
 
 /* Helper for make_cleanup_free_char_ptr_vec.  */

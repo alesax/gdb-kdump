@@ -1,3 +1,104 @@
+2015-01-27  Doug Evans  <dje@google.com>
+
+	* python.texi (Objfiles In Python): Document Objfile.username.
+
+2015-01-27  Doug Evans  <dje@google.com>
+
+	* python.texi (Objfiles In Python) <Objfile.filename>: Improve docs.
+	* guile.texi (Objfiles In Guile) <objfile-filename>: Improve docs.
+
+2015-01-22  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Threads): Describe -ascending for thread apply all.
+
+2015-01-16  Eli Zaretskii  <eliz@gnu.org>
+
+	* doc/gdb.texinfo (TUI Commands): Document the possible
+	values of NAME argument to 'winheight' command.  Explain the
+	effect of 'tabset' setting better.
+
+2015-01-11  Doug Evans  <xdje42@gmail.com>
+
+	PR gdb/15830
+	* gdb.texinfo (Debugging C Plus Plus): Mention "demangle".
+	(Symbols): Ditto.
+	(Maintenance Commands): Delete docs for "maint demangle".
+
+2014-12-31  Joel Brobecker  <brobecker@adacore.com>
+
+	* gdb.texinfo (Files): Remove documentation of the
+	"add-shared-symbol-files" and "assf" commands.
+	(Cygwin Native): Remove documentation of the "dll-symbols"
+	command.
+
+2014-12-17  Doug Evans  <xdje42@gmail.com>
+
+	* gdb.texinfo (Debugging Output): Document "debug symbol-lookup".
+
+2014-12-12  Phil Muldoon  <pmuldoon@redhat.com>
+	    Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Altering): Update.
+	(Compiling and Injecting Code): New node.
+
+2014-12-12  Doug Evans  <dje@google.com>
+
+	* python.texi (Objfiles In Python): Document gdb.lookup_objfile.
+
+2014-12-12  Andreas Arnez  <arnez@linux.vnet.ibm.com>
+
+	* gdb.texinfo: Document "maint print user-registers".
+
+2014-12-08  Doug Evans  <dje@google.com>
+
+	* python.texi (Objfiles In Python): Document Objfile.owner.
+
+2014-12-04  Doug Evans  <dje@google.com>
+
+	* python.texi (Objfiles In Python): Document
+	Objfile.add_separate_debug_file.
+
+2014-12-04  Doug Evans  <dje@google.com>
+
+	* python.texi (Objfiles In Python): Document Objfile.build_id.
+
+2014-12-02  Nick Bull  <nicholaspbull@gmail.com>
+
+	* python.texi (Events In Python): Document new events
+	InferiorCallPreEvent, InferiorCallPostEvent, MemoryChangedEvent
+	and RegisterChangedEvent.
+
+2014-11-30  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Add add-auto-load-scripts-directory.
+	* gdb.texinfo (Auto-loading): Add add-auto-load-scripts-directory link.
+	(objfile-gdbdotext file): Add add-auto-load-scripts-directory.
+
+2014-11-30  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading safe path): Fix add-auto-load-safe-path
+	description typo.
+
+2014-10-30  Doug Evans  <dje@google.com>
+
+	* python.texi (Progspaces In Python): Document ability to add
+	random attributes to gdb.Progspace objects.
+	(Objfiles In Python): Document ability to add random attributes to
+	gdb.objfile objects.
+
+2014-10-27  Pedro Alves  <palves@redhat.com>
+
+	* gdb.texinfo (Continuing and Stepping): Add cross reference to
+	info on stepping and signal handlers.
+	(Signals): Explain stepping and signal handlers.  Add context
+	index entry, and cross references.
+
+2014-10-20  Simon Marchi  <simon.marchi@ericsson.com>
+
+	* python.texi (Breakpoints In Python): Add parenthesis after
+	Breakpoint.delete.  Clarify Breakpoint.enabled description so
+	that it contains "disable".
+
 2014-10-17  Doug Evans  <dje@google.com>
 
 	* python.texi (Events In Python): Document clear_objfiles event.

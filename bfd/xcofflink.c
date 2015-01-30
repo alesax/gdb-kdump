@@ -1,5 +1,5 @@
 /* POWER/PowerPC XCOFF linker support.
-   Copyright (C) 1995-2014 Free Software Foundation, Inc.
+   Copyright (C) 1995-2015 Free Software Foundation, Inc.
    Written by Ian Lance Taylor <ian@cygnus.com>, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -4494,7 +4494,10 @@ xcoff_link_input_bfd (struct xcoff_final_link_info *flinfo,
 			  if (strings == NULL)
 			    return FALSE;
 			}
-		      filename = strings + aux.x_file.x_n.x_offset;
+		      if ((bfd_size_type) aux.x_file.x_n.x_offset >= obj_coff_strings_len (input_bfd))
+			filename = _("<corrupt>");
+		      else
+			filename = strings + aux.x_file.x_n.x_offset;
 		      indx = _bfd_stringtab_add (flinfo->strtab, filename,
 						 hash, copy);
 		      if (indx == (bfd_size_type) -1)
@@ -5735,7 +5738,7 @@ xcoff_reloc_link_order (bfd *output_bfd,
 
       size = bfd_get_reloc_size (howto);
       buf = bfd_zmalloc (size);
-      if (buf == NULL)
+      if (buf == NULL && size != 0)
 	return FALSE;
 
       rstat = _bfd_relocate_contents (howto, output_bfd, addend, buf);

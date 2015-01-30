@@ -1,5 +1,5 @@
 /* BFD back-end for PDP-11 a.out binaries.
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -1189,6 +1189,9 @@ aout_get_external_symbols (bfd *abfd)
 
       count = exec_hdr (abfd)->a_syms / EXTERNAL_NLIST_SIZE;
 
+      /* PR 17512: file: 011f5a08.  */
+      if (count == 0)
+	return FALSE;
 #ifdef USE_MMAP
       if (! bfd_get_file_window (abfd, obj_sym_filepos (abfd),
 				 exec_hdr (abfd)->a_syms,
@@ -3152,7 +3155,7 @@ aout_link_reloc_link_order (struct aout_final_link_info *flaginfo,
 
       size = bfd_get_reloc_size (howto);
       buf = bfd_zmalloc (size);
-      if (buf == NULL)
+      if (buf == NULL && size != 0)
 	return FALSE;
       r = MY_relocate_contents (howto, flaginfo->output_bfd,
 				pr->addend, buf);

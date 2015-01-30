@@ -1,5 +1,5 @@
 /* dlltool.c -- tool to generate stuff for PE style DLLs
-   Copyright (C) 1995-2014 Free Software Foundation, Inc.
+   Copyright (C) 1995-2015 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -1699,6 +1699,9 @@ scan_obj_file (const char *filename)
 	    scan_open_obj_file (arfile);
 	  next = bfd_openr_next_archived_file (f, arfile);
 	  bfd_close (arfile);
+	  /* PR 17512: file: 58715298.  */
+	  if (next == arfile)
+	    break;
 	  arfile = next;
 	}
 
@@ -3586,7 +3589,15 @@ identify_search_archive (bfd * abfd,
         }
 
       if (last_arfile != NULL)
-	bfd_close (last_arfile);
+	{
+	  bfd_close (last_arfile);
+	  /* PR 17512: file: 8b2168d4.  */
+	  if (last_arfile == arfile)
+	    {
+	      last_arfile = NULL;
+	      break;
+	    }
+	}
 
       last_arfile = arfile;
     }
@@ -4041,6 +4052,7 @@ main (int ac, char **av)
   bindtextdomain (PACKAGE, LOCALEDIR);
   textdomain (PACKAGE);
 
+  bfd_set_error_program_name (program_name);
   expandargv (&ac, &av);
 
   while ((c = getopt_long (ac, av,

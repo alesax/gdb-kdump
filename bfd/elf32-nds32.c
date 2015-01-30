@@ -1,5 +1,5 @@
 /* NDS32-specific support for 32-bit ELF.
-   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+   Copyright (C) 2012-2015 Free Software Foundation, Inc.
    Contributed by Andes Technology Corporation.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -321,11 +321,11 @@ static reloc_howto_type nds32_elf_howto_table[] =
   /* This reloc does nothing.  */
   HOWTO (R_NDS32_NONE,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
-	 32,			/* bitsize */
+	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* bitsize */
 	 FALSE,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_bitfield,	/* complain_on_overflow */
+	 complain_overflow_dont,	/* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
 	 "R_NDS32_NONE",	/* name */
 	 FALSE,			/* partial_inplace */
@@ -2965,7 +2965,11 @@ nds32_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED, arelent *cache_ptr,
   enum elf_nds32_reloc_type r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
-  BFD_ASSERT (ELF32_R_TYPE (dst->r_info) <= R_NDS32_GNU_VTENTRY);
+  if (r_type > R_NDS32_GNU_VTENTRY)
+    {
+      _bfd_error_handler (_("%A: invalid NDS32 reloc number: %d"), abfd, r_type);
+      r_type = 0;
+    }
   cache_ptr->howto = bfd_elf32_bfd_reloc_type_table_lookup (r_type);
 }
 
@@ -4182,11 +4186,10 @@ nds32_relocate_contents (reloc_howto_type *howto, bfd *input_bfd,
   switch (size)
     {
     default:
-    case 0:
-    case 1:
-    case 8:
       abort ();
       break;
+    case 0:
+      return bfd_reloc_ok;
     case 2:
       x = bfd_getb16 (location);
       break;
@@ -11812,7 +11815,8 @@ nds32_elf_pick_relax (bfd_boolean init, asection *sec, bfd_boolean *again,
 		      struct elf_nds32_link_hash_table *table,
 		      struct bfd_link_info *link_info)
 {
-  static asection *final_sec;
+  static asection *final_sec, *first_sec = NULL;
+  static bfd_boolean normal_again = FALSE;
   static bfd_boolean set = FALSE;
   static bfd_boolean first = TRUE;
   int round_table[] = {
@@ -11824,6 +11828,13 @@ nds32_elf_pick_relax (bfd_boolean init, asection *sec, bfd_boolean *again,
   static int pass = 0;
   static int relax_round;
 
+  /* The new round.  */
+  if (init && first_sec == sec)
+    {
+      set = TRUE;
+      normal_again = FALSE;
+    }
+
   if (first)
     {
       /* Run an empty run to get the final section.  */
@@ -11832,27 +11843,29 @@ nds32_elf_pick_relax (bfd_boolean init, asection *sec, bfd_boolean *again,
       /* It has to enter relax again because we can
 	 not make sure what the final turn is.  */
       *again = TRUE;
+
       first = FALSE;
+      first_sec = sec;
     }
 
-  if (!set && *again)
+  if (!set)
     {
-      /* It is reentered when again is FALSE.  */
+      /* Not reenter yet.  */
       final_sec = sec;
       return relax_round;
     }
 
-  /* The second round begins.  */
-  set = TRUE;
-
   relax_round = round_table[pass];
+
+  if (!init && relax_round == NDS32_RELAX_NORMAL_ROUND && *again)
+    normal_again = TRUE;
 
   if (!init && final_sec == sec)
     {
       switch (relax_round)
 	{
 	case NDS32_RELAX_NORMAL_ROUND:
-	  if (!*again)
+	  if (!normal_again)
 	    {
 	      /* Normal relaxation done.  */
 	      if (table->target_optimize & NDS32_RELAX_JUMP_IFC_ON)
@@ -12029,7 +12042,10 @@ nds32_elf_relax_section (bfd *abfd, asection *sec,
   if (ELF32_R_TYPE (irel->r_info) == R_NDS32_RELAX_ENTRY)
     {
       if (irel->r_addend & R_NDS32_RELAX_ENTRY_DISABLE_RELAX_FLAG)
-	return TRUE;
+	{
+	  nds32_elf_pick_relax (FALSE, sec, again, table, link_info);
+	  return TRUE;
+	}
 
       if (irel->r_addend & R_NDS32_RELAX_ENTRY_OPTIMIZE_FLAG)
 	optimize = 1;

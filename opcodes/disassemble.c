@@ -1,5 +1,5 @@
 /* Select disassembly routine for specified architecture.
-   Copyright (C) 1994-2014 Free Software Foundation, Inc.
+   Copyright (C) 1994-2015 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -37,6 +37,7 @@
 #define ARCH_epiphany
 #define ARCH_fr30
 #define ARCH_frv
+#define ARCH_ft32
 #define ARCH_h8300
 #define ARCH_h8500
 #define ARCH_hppa
@@ -89,6 +90,7 @@
 #define ARCH_tilepro
 #define ARCH_v850
 #define ARCH_vax
+#define ARCH_visium
 #define ARCH_w65
 #define ARCH_xstormy16
 #define ARCH_xc16x
@@ -444,6 +446,11 @@ disassembler (abfd)
       disassemble = print_insn_tic80;
       break;
 #endif
+#ifdef ARCH_ft32
+    case bfd_arch_ft32:
+      disassemble = print_insn_ft32;
+      break;
+#endif
 #ifdef ARCH_v850
     case bfd_arch_v850:
     case bfd_arch_v850_rh850:
@@ -492,6 +499,11 @@ disassembler (abfd)
     case bfd_arch_vax:
       disassemble = print_insn_vax;
       break;
+#endif
+#ifdef ARCH_visium
+     case bfd_arch_visium:
+       disassemble = print_insn_visium;
+       break;
 #endif
 #ifdef ARCH_frv
     case bfd_arch_frv:

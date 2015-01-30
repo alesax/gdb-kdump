@@ -1,6 +1,6 @@
 /* Memory-access and commands for "inferior" process, for GDB.
 
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1199,9 +1199,12 @@ jump_command (char *arg, int from_tty)
 
   if (sfn != NULL)
     {
+      struct obj_section *section;
+
       fixup_symbol_section (sfn, 0);
-      if (section_is_overlay (SYMBOL_OBJ_SECTION (SYMBOL_OBJFILE (sfn), sfn)) &&
-	  !section_is_mapped (SYMBOL_OBJ_SECTION (SYMBOL_OBJFILE (sfn), sfn)))
+      section = SYMBOL_OBJ_SECTION (symbol_objfile (sfn), sfn);
+      if (section_is_overlay (section)
+	  && !section_is_mapped (section))
 	{
 	  if (!query (_("WARNING!!!  Destination is in "
 			"unmapped overlay!  Jump anyway? ")))
@@ -1869,7 +1872,14 @@ finish_command (char *arg, int from_tty)
       if (execution_direction == EXEC_REVERSE)
 	printf_filtered (_("Run back to call of "));
       else
-	printf_filtered (_("Run till exit from "));
+	{
+	  if (function != NULL && TYPE_NO_RETURN (function->type)
+	      && !query (_("warning: Function %s does not return normally.\n"
+			   "Try to finish anyway? "),
+			 SYMBOL_PRINT_NAME (function)))
+	    error (_("Not confirmed."));
+	  printf_filtered (_("Run till exit from "));
+	}
 
       print_stack_frame (get_selected_frame (NULL), 1, LOCATION, 0);
     }
@@ -2864,43 +2874,41 @@ interrupt_command (char *args, int from_tty)
     }
 }
 
-static void
-print_float_info (struct ui_file *file,
-		  struct frame_info *frame, const char *args)
+/* See inferior.h.  */
+
+void
+default_print_float_info (struct gdbarch *gdbarch, struct ui_file *file,
+			  struct frame_info *frame, const char *args)
 {
-  struct gdbarch *gdbarch = get_frame_arch (frame);
+  int regnum;
+  int printed_something = 0;
 
-  if (gdbarch_print_float_info_p (gdbarch))
-    gdbarch_print_float_info (gdbarch, file, frame, args);
-  else
+  for (regnum = 0;
+       regnum < gdbarch_num_regs (gdbarch)
+	 + gdbarch_num_pseudo_regs (gdbarch);
+       regnum++)
     {
-      int regnum;
-      int printed_something = 0;
-
-      for (regnum = 0;
-	   regnum < gdbarch_num_regs (gdbarch)
-		    + gdbarch_num_pseudo_regs (gdbarch);
-	   regnum++)
+      if (gdbarch_register_reggroup_p (gdbarch, regnum, float_reggroup))
 	{
-	  if (gdbarch_register_reggroup_p (gdbarch, regnum, float_reggroup))
-	    {
-	      printed_something = 1;
-	      gdbarch_print_registers_info (gdbarch, file, frame, regnum, 1);
-	    }
+	  printed_something = 1;
+	  gdbarch_print_registers_info (gdbarch, file, frame, regnum, 1);
 	}
-      if (!printed_something)
-	fprintf_filtered (file, "No floating-point info "
-			  "available for this processor.\n");
     }
+  if (!printed_something)
+    fprintf_filtered (file, "No floating-point info "
+		      "available for this processor.\n");
 }
 
 static void
 float_info (char *args, int from_tty)
 {
+  struct frame_info *frame;
+
   if (!target_has_registers)
     error (_("The program has no registers now."));
 
-  print_float_info (gdb_stdout, get_selected_frame (NULL), args);
+  frame = get_selected_frame (NULL);
+  gdbarch_print_float_info (get_frame_arch (frame), gdb_stdout, frame, args);
 }
 
 static void
@@ -3235,18 +3243,24 @@ If non-stop mode is enabled, interrupt only the current thread,\n\
 otherwise all the threads in the program are stopped.  To \n\
 interrupt all running threads in non-stop mode, use the -a option."));
 
-  add_info ("registers", nofp_registers_info, _("\
+  c = add_info ("registers", nofp_registers_info, _("\
 List of integer registers and their contents, for selected stack frame.\n\
 Register name as argument means describe only that register."));
   add_info_alias ("r", "registers", 1);
+  set_cmd_completer (c, reg_or_group_completer);
 
   if (xdb_commands)
-    add_com ("lr", class_info, nofp_registers_info, _("\
+    {
+      c = add_com ("lr", class_info, nofp_registers_info, _("\
 List of integer registers and their contents, for selected stack frame.\n\
 Register name as argument means describe only that register."));
-  add_info ("all-registers", all_registers_info, _("\
+      set_cmd_completer (c, reg_or_group_completer);
+    }
+
+  c = add_info ("all-registers", all_registers_info, _("\
 List of all registers and their contents, for selected stack frame.\n\
 Register name as argument means describe only that register."));
+  set_cmd_completer (c, reg_or_group_completer);
 
   add_info ("program", program_info,
 	    _("Execution status of the program."));

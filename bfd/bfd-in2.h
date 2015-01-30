@@ -7,7 +7,7 @@
 
 /* Main header file for the bfd library -- portable access to object files.
 
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.
 
@@ -299,10 +299,13 @@ typedef struct bfd_section *sec_ptr;
 
 #define bfd_is_com_section(ptr) (((ptr)->flags & SEC_IS_COMMON) != 0)
 
+#define bfd_get_section_limit_octets(bfd, sec)			\
+  ((bfd)->direction != write_direction && (sec)->rawsize != 0	\
+   ? (sec)->rawsize : (sec)->size)
+
 /* Find the address one past the end of SEC.  */
 #define bfd_get_section_limit(bfd, sec) \
-  (((bfd)->direction != write_direction && (sec)->rawsize != 0	\
-    ? (sec)->rawsize : (sec)->size) / bfd_octets_per_byte (bfd))
+  (bfd_get_section_limit_octets(bfd, sec) / bfd_octets_per_byte (bfd))
 
 /* Return TRUE if input section SEC has been discarded.  */
 #define discarded_section(sec)				\
@@ -813,12 +816,6 @@ struct internal_syment;
 union internal_auxent;
 #endif
 
-extern bfd_boolean bfd_coff_get_syment
-  (bfd *, struct bfd_symbol *, struct internal_syment *);
-
-extern bfd_boolean bfd_coff_get_auxent
-  (bfd *, struct bfd_symbol *, int, union internal_auxent *);
-
 extern bfd_boolean bfd_coff_set_symbol_class
   (bfd *, struct bfd_symbol *, unsigned int);
 
@@ -944,10 +941,10 @@ extern void bfd_elf32_aarch64_init_maps
   (bfd *);
 
 extern void bfd_elf64_aarch64_set_options
-  (bfd *, struct bfd_link_info *, int, int, int);
+  (bfd *, struct bfd_link_info *, int, int, int, int);
 
 extern void bfd_elf32_aarch64_set_options
-  (bfd *, struct bfd_link_info *, int, int, int);
+  (bfd *, struct bfd_link_info *, int, int, int, int);
 
 /* ELF AArch64 mapping symbol support.  */
 #define BFD_AARCH64_SPECIAL_SYM_TYPE_MAP	(1 << 0)
@@ -998,26 +995,6 @@ extern void bfd_elf32_ia64_after_parse
 
 extern void bfd_elf64_ia64_after_parse
   (int);
-
-/* This structure is used for a comdat section, as in PE.  A comdat
-   section is associated with a particular symbol.  When the linker
-   sees a comdat section, it keeps only one of the sections with a
-   given name and associated with a given symbol.  */
-
-struct coff_comdat_info
-{
-  /* The name of the symbol associated with a comdat section.  */
-  const char *name;
-
-  /* The local symbol table index of the symbol associated with a
-     comdat section.  This is only meaningful to the object file format
-     specific code; it is not an index into the list returned by
-     bfd_canonicalize_symtab.  */
-  long symbol;
-};
-
-extern struct coff_comdat_info * bfd_coff_get_comdat_section
-  (bfd *, struct bfd_section *);
 /* Extracted from init.c.  */
 void bfd_init (void);
 
@@ -1966,6 +1943,7 @@ enum bfd_architecture
 #define bfd_mach_mips_octeon           6501
 #define bfd_mach_mips_octeonp          6601
 #define bfd_mach_mips_octeon2          6502
+#define bfd_mach_mips_octeon3          6503
 #define bfd_mach_mips_xlr              887682   /* decimal 'XLR'  */
 #define bfd_mach_mipsisa32             32
 #define bfd_mach_mipsisa32r2           33
@@ -2164,6 +2142,8 @@ enum bfd_architecture
 #define bfd_mach_fr550         550
   bfd_arch_moxie,       /* The moxie processor */
 #define bfd_mach_moxie         1
+  bfd_arch_ft32,       /* The ft32 processor */
+#define bfd_mach_ft32          1
   bfd_arch_mcore,
   bfd_arch_mep,
 #define bfd_mach_mep           1
@@ -2283,6 +2263,8 @@ enum bfd_architecture
 #define bfd_mach_aarch64_ilp32 32
   bfd_arch_nios2,
 #define bfd_mach_nios2 0
+  bfd_arch_visium,     /* Visium */
+#define bfd_mach_visium        1
   bfd_arch_last
   };
 
@@ -3023,6 +3005,13 @@ to compensate for the borrow when the low bits are added.  */
 
 /* Moxie ELF relocations.  */
   BFD_RELOC_MOXIE_10_PCREL,
+
+
+/* FT32 ELF relocations.  */
+  BFD_RELOC_FT32_10,
+  BFD_RELOC_FT32_20,
+  BFD_RELOC_FT32_17,
+  BFD_RELOC_FT32_18,
 
 
 /* Fujitsu Frv Relocations.  */
@@ -6066,6 +6055,15 @@ assembler and not (currently) written to any object files.  */
 
 /* Adapteva EPIPHANY - 8 bit immediate for 16 bit mov instruction.  */
   BFD_RELOC_EPIPHANY_IMM8,
+
+/* Visium Relocations.  */
+  BFD_RELOC_VISIUM_HI16,
+  BFD_RELOC_VISIUM_LO16,
+  BFD_RELOC_VISIUM_IM16,
+  BFD_RELOC_VISIUM_REL16,
+  BFD_RELOC_VISIUM_HI16_PCREL,
+  BFD_RELOC_VISIUM_LO16_PCREL,
+  BFD_RELOC_VISIUM_IM16_PCREL,
   BFD_RELOC_UNUSED };
 
 typedef enum bfd_reloc_code_real bfd_reloc_code_real_type;
@@ -7014,6 +7012,7 @@ typedef struct bfd_target
   NAME##_make_empty_symbol, \
   NAME##_print_symbol, \
   NAME##_get_symbol_info, \
+  NAME##_get_symbol_version_string, \
   NAME##_bfd_is_local_label_name, \
   NAME##_bfd_is_target_special_symbol, \
   NAME##_get_lineno, \
@@ -7035,6 +7034,9 @@ typedef struct bfd_target
   void        (*_bfd_get_symbol_info)
     (bfd *, struct bfd_symbol *, symbol_info *);
 #define bfd_get_symbol_info(b,p,e) BFD_SEND (b, _bfd_get_symbol_info, (b,p,e))
+  const char *(*_bfd_get_symbol_version_string)
+    (bfd *, struct bfd_symbol *, bfd_boolean *);
+#define bfd_get_symbol_version_string(b,s,h) BFD_SEND (b, _bfd_get_symbol_version_string, (b,s,h))
   bfd_boolean (*_bfd_is_local_label_name) (bfd *, const char *);
   bfd_boolean (*_bfd_is_target_special_symbol) (bfd *, asymbol *);
   alent *     (*_get_lineno) (bfd *, struct bfd_symbol *);

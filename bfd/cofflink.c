@@ -1,5 +1,5 @@
 /* COFF specific linker code.
-   Copyright (C) 1994-2014 Free Software Foundation, Inc.
+   Copyright (C) 1994-2015 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -2003,7 +2003,10 @@ _bfd_coff_link_input_bfd (struct coff_final_link_info *flaginfo, bfd *input_bfd)
 			  if (strings == NULL)
 			    return FALSE;
 			}
-		      filename = strings + auxp->x_file.x_n.x_offset;
+		      if ((bfd_size_type) auxp->x_file.x_n.x_offset >= obj_coff_strings_len (input_bfd))
+			filename = _("<corrupt>");
+		      else
+			filename = strings + auxp->x_file.x_n.x_offset;
 		      indx = _bfd_stringtab_add (flaginfo->strtab, filename,
 						 hash, copy);
 		      if (indx == (bfd_size_type) -1)
@@ -2786,7 +2789,7 @@ _bfd_coff_reloc_link_order (bfd *output_bfd,
 
       size = bfd_get_reloc_size (howto);
       buf = (bfd_byte *) bfd_zmalloc (size);
-      if (buf == NULL)
+      if (buf == NULL && size != 0)
 	return FALSE;
 
       rstat = _bfd_relocate_contents (howto, output_bfd,

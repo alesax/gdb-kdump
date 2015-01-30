@@ -1,6 +1,6 @@
 /* Handle SVR4 shared libraries for GDB, the GNU Debugger.
 
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -3195,7 +3195,7 @@ struct target_so_ops svr4_so_ops;
    the main executable.  */
 
 static struct symbol *
-elf_lookup_lib_symbol (const struct objfile *objfile,
+elf_lookup_lib_symbol (struct objfile *objfile,
 		       const char *name,
 		       const domain_enum domain)
 {

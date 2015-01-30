@@ -1,5 +1,5 @@
 /* This file is tc-arm.h
-   Copyright (C) 1994-2014 Free Software Foundation, Inc.
+   Copyright (C) 1994-2015 Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
 	Modified by David Taylor (dtaylor@armltd.co.uk)
 
@@ -116,6 +116,9 @@ extern bfd_boolean tc_start_label_without_colon (char, const char *);
 #define md_end arm_md_end
 extern void arm_md_end (void);
 bfd_boolean arm_is_eabi (void);
+
+#define md_post_relax_hook		aeabi_set_public_attributes ()
+extern void aeabi_set_public_attributes (void);
 #endif
 
 /* NOTE: The fake label creation in stabs.c:s_stab_generic() has

@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86 (i386 and x86-64).
 
-   Copyright (C) 1999-2014 Free Software Foundation, Inc.
+   Copyright (C) 1999-2015 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -214,7 +214,7 @@ x86_linux_prepare_to_resume (struct lwp_info *lwp)
       lwp->arch_private->debug_registers_changed = 0;
     }
 
-  if (clear_status || lwp->stopped_by_watchpoint)
+  if (clear_status || lwp->stop_reason == LWP_STOPPED_BY_WATCHPOINT)
     x86_linux_dr_set (lwp->ptid, DR_STATUS, 0);
 }
 
