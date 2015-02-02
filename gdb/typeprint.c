@@ -52,7 +52,8 @@ const struct type_print_options type_print_raw_options =
   1,				/* print_typedefs */
   NULL,				/* local_typedefs */
   NULL,				/* global_table */
-  NULL				/* global_printers */
+  NULL,				/* global_printers */
+  0				/* print_offsets */
 };
 
 /* The default flags for 'ptype' and 'whatis'.  */
@@ -64,7 +65,8 @@ static struct type_print_options default_ptype_flags =
   1,				/* print_typedefs */
   NULL,				/* local_typedefs */
   NULL,				/* global_table */
-  NULL				/* global_printers */
+  NULL				/* global_printers */,
+  0				/* print_offsets */
 };
 
 
@@ -433,6 +435,9 @@ whatis_exp (char *exp, int show)
 		  break;
 		case 'T':
 		  flags.print_typedefs = 1;
+		  break;
+		case 'o':
+		  flags.print_offsets = 1;
 		  break;
 		default:
 		  error (_("unrecognized flag '%c'"), *exp);
