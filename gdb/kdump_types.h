@@ -68,7 +68,8 @@ struct {
 } kt_thread_struct;
 
 
-int kdump_types_init(void);
+#define F_BIG_ENDIAN 1
+int kdump_types_init(int flags);
 void *kdump_type_alloc (struct kdump_type *type, offset addr, int pos, void *buff);
 struct kt_list_head;
 

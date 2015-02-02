@@ -85,12 +85,24 @@ core_close (struct target_ops *self)
 	kdump_gdbarch = NULL;
 }
 
-static int init_types(void);
-static int init_types(void)
+static int init_types(int);
+static int init_types(int flags)
 {
 	struct type *t, *et;
+	int i, nc, r;
+	kdump_reg_t reg;
 
-	kdump_types_init();
+	nc = kdump_num_cpus(dump_ctx);
+
+	for (i = 0; i < nc; i++) {
+		for (r = 0; ; r++) {
+			if (kdump_read_reg(dump_ctx, i, r, &reg)) break;
+			fprintf(stdout, "CPU % 2d,REG%02d=%llx\n", i, r, (long long unsigned int)reg);
+		}
+
+	}
+
+	kdump_types_init(flags);
 	return (0);
 }
 
@@ -134,9 +146,11 @@ static int init_values(void)
 		b = kdump_type_alloc((struct kdump_type*)&kt_voidp, rsp, 0, b);
 		rip = kt_ptr_value(b);
 #ifdef _DEBUG
-		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d\n", off_task, stack, rsp, rip, pid, state);
+		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + kt_task_struct.comm);
 #endif
+		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + kt_task_struct.comm);
 
+		if (pid == 0) continue;
 		in = current_inferior();
 		tt = ptid_build (1, pid, 0);
 		inferior_appeared (in, 1);
@@ -149,6 +163,13 @@ static int init_values(void)
 
 		rc = get_thread_regcache (tt);
 
+		for (i = 0; i < 55; i++) {
+			val = 0x12400 + i;
+			val = __bswap_64(val);
+			regcache_raw_supply(rc, i, &val);
+		}
+		val = __bswap_64(rip);
+		regcache_raw_supply(rc, 1, &val);
 		/* 
 		 * The task is not running - e.g. crash would show it's stuck in schedule()
 		 * Yet schedule() is not on it's stack.
@@ -177,10 +198,11 @@ static int init_values(void)
 			rip = kt_ptr_value(b);
 			rsp += 8;
 		}
-		val = rsp;
+		val = __bswap_64(rip); 
 		regcache_raw_supply(rc, 7, &val);
-		val = rip; 
-		regcache_raw_supply(rc, 16, &val);
+		regcache_write_pc(rc, rip);
+		val = __bswap_64(rsp);
+		regcache_raw_supply(rc, 17, &val);
 	}
 
 error:
@@ -233,6 +255,11 @@ kdump_open (const char *arg, int from_tty)
 	  return;
 	}
 
+	if (kdump_vtop_init(dump_ctx) != kdump_ok) {
+		error(_("Cannot kdump_vtop_init()\n"));
+		return;
+	}
+
 	old_chain = make_cleanup (xfree, filename);
 
 	flags = O_BINARY | O_LARGEFILE;
@@ -250,21 +277,47 @@ kdump_open (const char *arg, int from_tty)
 		struct gdbarch_info gai;
 		struct gdbarch *garch;
 		struct inferior *inf;
+		const char *archname;
 		ptid_t tt;
 
+		struct {
+			char *kdident;
+			char *gdbident;
+			int flags;
+		} *a, archlist[] = {
+			{"x86_64", "i386:x86-64", 0},
+			{"s390x",  "s390:64-bit", 1},
+			{NULL}
+		};
+
+		archname = kdump_arch_name(dump_ctx);
+		if (! archname) {
+			error(_("The architecture could not be identified"));
+			return;
+		}
+		for (a = archlist; a->kdident && strcmp(a->kdident, archname); a++);
+
+		if (! a->kdident) {
+			error(_("Architecture %s is not yet supported by gdb-kdump\n"), archname);
+			return;
+		}
+
 		gdbarch_info_init(&gai);
-		ait = bfd_scan_arch ("i386:x86-64");
+		ait = bfd_scan_arch (a->gdbident);
+		if (! ait) {
+			error(_("Architecture %s not supported in gdb\n"), a->gdbident);
+			return;
+		}
 		gai.bfd_arch_info = ait;
 		garch = gdbarch_find_by_info(gai);
 		kdump_gdbarch = garch; 
 #ifdef _DEBUG
 		fprintf(stderr, "arch=%s,ait=%p,garch=%p\n", selected_architecture_name(), ait, garch);
 #endif
-
 		init_thread_list();
 		inf = current_inferior();
 		
-		if (init_types()) {
+		if (init_types(a->flags)) {
 			fprintf(stderr, "Cannot init types!\n");
 		}
 		if (init_values()) {

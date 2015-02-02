@@ -35,9 +35,11 @@
 #include "completer.h"
 #include "filestuff.h"
 #include "kdump_types.h"
+#include <byteswap.h>
+#include <stdint.h>
 
 static struct kdump_type *typelist = NULL;
-
+static int kt_flags= 0;
 enum {
 	T_STRUCT = 1,
 	T_BASE,
@@ -76,6 +78,7 @@ static struct kdump_type *kdump_type_init (void *type, const char *name, const c
 
 	ktype->name = name;
 	ktype->origtype = t;
+	ktype->size = TYPE_LENGTH(t);
 
 	ktype->next = typelist;
 	typelist = ktype;
@@ -188,10 +191,11 @@ int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *da
 		if((s.m = kdump_type_member((struct kdump_type*)&s, mn)) == -1) break; else ok++; } while(0)
 #define STRUCT_MEMBER(s,m) STRUCT_MEMBER_(s,m,#m)
 
-int kdump_types_init(void);
-int kdump_types_init(void)
+int kdump_types_init(int flags)
 {
 	int ok = 1;
+	kt_flags = flags;
+
 	do {
 		
 		if (!kdump_type_init (&kt_int, "int", "int", T_BASE)) 
@@ -243,7 +247,13 @@ int kdump_types_init(void)
 		if (!kdump_type_init (&kt_thread_struct, "thread_struct", "thread_struct", T_STRUCT)) 
 			break;
 
-		STRUCT_MEMBER(kt_thread_struct,sp);
+	//	STRUCT_MEMBER(kt_thread_struct,sp);
+                kt_thread_struct.sp = 0;
+                if((kt_thread_struct.sp = kdump_type_member((struct kdump_type*)&kt_thread_struct, "sp")) == -1) {
+                        if((kt_thread_struct.sp = kdump_type_member((struct kdump_type*)&kt_thread_struct, "ksp")) == -1) {
+                                break;
+                        }
+                }
 
 		ok = 0;
 	} while(0);
@@ -260,7 +270,13 @@ unsigned long long kt_int_value (void *buff)
 {
 	unsigned long long val;
 
-	val = *(int*)buff;
+	if (kt_int.base.size == 4) {
+		val = *(int32_t*)buff;
+		if (kt_flags & F_BIG_ENDIAN) val = __bswap_32(val);
+	} else {
+		val = *(int64_t*)buff;
+		if (kt_flags & F_BIG_ENDIAN) val = __bswap_64(val);
+	}
 
 	return val;
 }
@@ -268,7 +284,14 @@ unsigned long long kt_int_value (void *buff)
 unsigned long long kt_ptr_value (void *buff)
 {
 	unsigned long long val;
-	val = (unsigned long long) *(void**)buff;
+	
+	if (kt_voidp.base.size == 4) {
+		val = (unsigned long long) *(uint32_t**)buff;
+		if (kt_flags & F_BIG_ENDIAN) val = __bswap_32(val);
+	} else {
+		val = (unsigned long long) *(uint64_t**)buff;
+		if (kt_flags & F_BIG_ENDIAN) val = __bswap_64(val);
+	}
 	return val;
 }
 
