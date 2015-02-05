@@ -34,7 +34,6 @@
 #include "gdbcmd.h"
 #include "inferior.h"
 #include "infrun.h"
-#include "symtab.h"
 #include "command.h"
 #include "bfd.h"
 #include "target.h"
@@ -54,11 +53,23 @@
 #include "completer.h"
 #include "filestuff.h"
 #include "kdumpfile.h"
-#include "kdump_types.h"
 
 #ifndef O_LARGEFILE
 #define O_LARGEFILE 0
 #endif
+typedef unsigned long long offset;
+#define NULL_offset 0LL
+#define F_BIG_ENDIAN 1
+
+unsigned long long kt_int_value (void *buff);
+unsigned long long kt_ptr_value (void *buff);
+
+int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data);
+
+#define kt_list_head_for_each(addr,head,lhb, _nxt) for((_nxt = kt_ptr_value(lhb)), kdump_type_alloc((struct kdump_type*)&kt_list_head, _nxt, 0, lhb);\
+	(_nxt = kt_ptr_value(lhb)) != head; \
+	kdump_type_alloc((struct kdump_type*)&kt_list_head, _nxt, 0, lhb))
+
 
 static struct target_ops core_ops;
 
@@ -73,6 +84,315 @@ static void init_core_ops (void);
 void _initialize_kdump (void);
 
 static void core_close (struct target_ops *self);
+
+
+typedef unsigned long long offset;
+
+#define KDUMP_TYPE const char *name; int size; int offset; struct type *origtype
+#define GET_GDB_TYPE(typ) types. typ .origtype
+#define GET_TYPE_SIZE(typ) (TYPE_LENGTH(GET_GDB_TYPE(typ)))
+#define NULL_offset 0LL
+#define F_BIG_ENDIAN 1
+#define MEMBER_OFFSET(type,member) types. type. member
+#define KDUMP_TYPE_ALLOC(type) kdump_type_alloc(GET_GDB_TYPE(type))
+#define KDUMP_TYPE_GET(type,off,where) kdump_type_get(GET_GDB_TYPE(type), off, 0, where)
+#define KDUMP_TYPE_FREE(where) free(where)
+#define SYMBOL(var,name) do { var = lookup_symbol(name, NULL, VAR_DOMAIN, NULL); if (! var) { fprintf(stderr, "Cannot lookup_symbol(" name ")\n"); goto error; } } while(0)
+
+
+#define list_head_for_each(head,lhb, _nxt) for((_nxt = kt_ptr_value(lhb)), KDUMP_TYPE_GET(list_head, _nxt, lhb);\
+	(_nxt = kt_ptr_value(lhb)) != head; \
+	KDUMP_TYPE_GET(list_head, _nxt, lhb))
+
+
+
+int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data);
+
+typedef enum {
+	ARCH_NONE,
+	ARCH_X86_64,
+	ARCH_S390X
+} t_arch;
+
+struct {
+	struct {
+		KDUMP_TYPE;
+		offset prev;
+		offset next;
+	} list_head;
+
+	struct {
+		KDUMP_TYPE;
+		offset first;
+	} hlist_head;
+
+	struct {
+		KDUMP_TYPE;
+		offset next;
+	} hlist_node;
+
+	struct {
+		KDUMP_TYPE;
+	} _int;
+
+	struct {
+		KDUMP_TYPE;
+	} _voidp;
+
+	struct {
+		KDUMP_TYPE;
+
+		offset nr;
+		offset pid_chain;
+	} upid;
+
+	struct {
+		KDUMP_TYPE;
+
+		offset pid;
+		offset pids;
+		offset stack;
+		offset tasks;
+		offset thread;
+		offset state;
+		offset comm;
+	} task_struct;
+
+	struct {
+		KDUMP_TYPE;
+		offset sp;
+	} thread_struct;
+
+	struct {
+		KDUMP_TYPE;
+		offset curr;
+		offset idle;
+	} rq;
+
+	int flags;
+	t_arch arch;
+} types;
+
+enum {
+	T_STRUCT = 1,
+	T_BASE,
+	T_REF
+};
+
+unsigned long long kt_int_value (void *buff)
+{
+	unsigned long long val;
+
+	if (GET_TYPE_SIZE(_int) == 4) {
+		val = *(int32_t*)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_32(val);
+	} else {
+		val = *(int64_t*)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_64(val);
+	}
+
+	return val;
+}
+
+unsigned long long kt_ptr_value (void *buff)
+{
+	unsigned long long val;
+	
+	if (GET_TYPE_SIZE(_voidp) == 4) {
+		val = (unsigned long long) *(uint32_t**)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_32(val);
+	} else {
+		val = (unsigned long long) *(uint64_t**)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_64(val);
+	}
+	return val;
+}
+
+static offset get_symbol_address(const char *sname);
+static offset get_symbol_address(const char *sname)
+{
+	struct symbol *ss;
+	const struct language_defn *lang;
+	struct value *val;
+	ss = lookup_global_symbol(sname, NULL, VAR_DOMAIN);
+	if (! ss) {
+		return NULL_offset ;
+	}
+	lang  = language_def (SYMBOL_LANGUAGE (ss));
+	val = lang->la_read_var_value (ss, NULL);
+	if (! val) {
+		return NULL_offset;
+	}
+	return (offset) value_address(val);
+}
+
+
+static int kdump_type_init (struct type **_type, int *size, const char *origname, int origtype)
+{
+	struct type *t;
+
+	if (origtype == T_STRUCT)  {
+		t = lookup_struct(origname, NULL);
+	} else if (origtype == T_REF) {
+		struct type *dt;
+ 		dt = lookup_typename(current_language, kdump_gdbarch, origname, NULL, 0);
+		if (dt == NULL) {
+			fprintf (stderr, "Cannot lookup dereferenced type %s\n", origname);
+			t = NULL;
+		} else {
+			t = lookup_reference_type(dt);
+		}
+	} else 
+		t = lookup_typename(current_language, kdump_gdbarch, origname, NULL, 0);
+
+	if (t == NULL) {
+		fprintf(stderr, "Cannot lookup(%s)\n", origname);
+		return 1;
+	}
+
+	*_type = t;
+	*size = TYPE_LENGTH(t);
+
+	return 0;
+}
+
+static int kdump_type_member_init (struct type *type, const char *name, offset *poffset)
+{
+	int i;
+	struct field *f;
+	f = TYPE_FIELDS(type);
+	for (i = 0; i < TYPE_NFIELDS(type); i ++) {
+		if (! strcmp(f->name, name)) {
+			*poffset = (f->loc.physaddr >> 3);
+			return 0;
+		}
+		f++;
+	}
+	fprintf(stderr, "Cannot find member \'%s\'\n", name);
+	return -1;
+}
+
+
+static void *kdump_type_alloc(struct type *type)
+{
+	int allocated = 0;
+	void *buff;
+
+	allocated = 1;
+	buff = malloc(TYPE_LENGTH(type));
+	if (buff == NULL) {
+		fprintf (stderr, "Cannot allocate memory of %d length\n", (int)TYPE_LENGTH(type));
+		return NULL;
+	}
+	return buff;
+}
+
+static int kdump_type_get(struct type *type, offset addr, int pos, void *buff)
+{
+	if (target_read_raw_memory(addr + (TYPE_LENGTH(type)*pos), buff, TYPE_LENGTH(type))) {
+		fprintf (stderr, "Cannot read target memory of %d length\n", (int)TYPE_LENGTH(type));
+		return 1;
+	}
+
+	return 0;
+}
+
+
+int kdump_types_init(int flags);
+int kdump_types_init(int flags)
+{
+	int ret = 1;
+	
+	types.flags = flags;
+
+	#define INIT_STRUCT(name) if(kdump_type_init(&types. name .origtype, &types. name .size, #name, T_STRUCT)) { fprintf(stderr, "Cannot find struct type \'%s\'", #name); break; }
+	#define INIT_BASE_TYPE(name) if(kdump_type_init(&types. name .origtype, &types. name .size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
+	#define INIT_BASE_TYPE_(name,tname) if(kdump_type_init(&types. tname .origtype, &types. tname .size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
+	#define INIT_REF_TYPE(name) if(kdump_type_init(&types. name .origtype, &types. name .size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
+	#define INIT_REF_TYPE_(name,tname) if(kdump_type_init(&types. tname .origtype, &types. tname .size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
+	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname .origtype, #mname, &types. sname . mname)) { break; }
+
+	#define INIT_STRUCT_MEMBER_(sname,mname,mmname) if(kdump_type_member_init(types. sname .origtype, #mname, &types. sname . mmname)) { break; }
+
+	#define INIT_STRUCT_MEMBER__(sname,mname) kdump_type_member_init(types. sname .origtype, #mname, &types. sname . mname)
+	do {
+		INIT_BASE_TYPE_(int,_int); 
+		INIT_REF_TYPE_(void,_voidp); 
+
+		INIT_STRUCT(list_head); 
+		INIT_STRUCT_MEMBER(list_head,prev);
+		INIT_STRUCT_MEMBER(list_head,next);
+
+		INIT_STRUCT(hlist_head); 
+		INIT_STRUCT_MEMBER(hlist_head,first);
+
+		INIT_STRUCT(hlist_node); 
+		INIT_STRUCT_MEMBER(hlist_node,next);
+
+		INIT_STRUCT(upid); 
+		INIT_STRUCT_MEMBER(upid,nr);
+		INIT_STRUCT_MEMBER(upid,pid_chain);
+
+		INIT_STRUCT(task_struct); 
+		INIT_STRUCT_MEMBER(task_struct,pids);
+		INIT_STRUCT_MEMBER(task_struct,stack);
+		INIT_STRUCT_MEMBER(task_struct,tasks);
+		INIT_STRUCT_MEMBER(task_struct,thread);
+		INIT_STRUCT_MEMBER(task_struct,pid);
+		INIT_STRUCT_MEMBER(task_struct,state);
+		INIT_STRUCT_MEMBER(task_struct,comm);
+
+		INIT_STRUCT(thread_struct); 
+                MEMBER_OFFSET(thread_struct,sp) = 0;
+		INIT_STRUCT_MEMBER__(thread_struct,sp);
+                if (MEMBER_OFFSET(thread_struct,sp) == 0) {
+			INIT_STRUCT_MEMBER_(thread_struct,ksp,sp);
+		}
+
+		INIT_STRUCT(rq); 
+
+		INIT_STRUCT_MEMBER(rq,curr);
+		INIT_STRUCT_MEMBER(rq,idle);
+	
+		ret = 0;
+	} while(0);
+
+	if (ret) {
+		fprintf(stderr, "Cannot init types\n");
+	}
+
+	return ret;
+}
+
+int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data)
+{
+	char *b = NULL;
+	offset l;
+	int i = 0;
+	static int cnt = 0;
+	static int ccnt = 0;
+	ccnt ++;
+
+	b = KDUMP_TYPE_ALLOC(hlist_node);
+
+	l = kt_ptr_value((char*)addr + (size_t)MEMBER_OFFSET(hlist_head,first));
+	if (l == NULL_offset) return 0;
+	while(l != NULL_offset) {
+		
+		if (KDUMP_TYPE_GET (hlist_node, l, b)) {
+			fprintf(stderr, "Cannot kdump_type_alloc(kt_hlist_node)");
+			KDUMP_TYPE_FREE(b);
+			return -1;
+		}
+		if (func(data, l)) break;
+		l = kt_ptr_value((char*)b + (size_t)MEMBER_OFFSET(hlist_node,next));
+	}
+
+	if (b) free(b);
+	return 0;
+}
+
+
 
 static void
 core_close (struct target_ops *self)
@@ -99,15 +419,10 @@ static int init_types(int flags)
 			if (kdump_read_reg(dump_ctx, i, r, &reg)) break;
 			fprintf(stdout, "CPU % 2d,REG%02d=%llx\n", i, r, (long long unsigned int)reg);
 		}
-
 	}
 
-	kdump_types_init(flags);
-	return (0);
+	return kdump_types_init(flags);
 }
-
-#define SYMBOL(var,name) do { var = lookup_symbol(name, NULL, VAR_DOMAIN, NULL); if (! var) { fprintf(stderr, "Cannot lookup_symbol(" name ")\n"); goto error; } } while(0)
-
 static int init_values(void);
 static int init_values(void)
 {
@@ -116,19 +431,32 @@ static int init_values(void)
 	offset off, off_task, rsp, rip;
 	offset tasks;
 	offset stack;
+	offset o_init_task;
 	int state;
 	int i;
 	int hashsize;
 
-	SYMBOL(s, "init_task");
-	init_task = kdump_type_alloc((struct kdump_type*)&kt_task_struct, SYMBOL_VALUE_ADDRESS(s), 0, NULL);
-
-	tasks = kt_ptr_value(init_task + kt_task_struct.tasks);
+	s = NULL;
+	o_init_task = get_symbol_address("init_task");
+	if (! o_init_task) {
+		fprintf(stderr, "Cannot find init_task\n");
+		return -1;
+	}
+	init_task = KDUMP_TYPE_ALLOC(task_struct);
+	if (!init_task) 
+		goto error;
+	task = KDUMP_TYPE_ALLOC(task_struct);
+	if (!task) goto error;
+	b = KDUMP_TYPE_ALLOC(_voidp);
+	if (!b) goto error;
+	if (KDUMP_TYPE_GET(task_struct, o_init_task, init_task)) 
+		goto error;
+	tasks = kt_ptr_value(init_task + MEMBER_OFFSET(task_struct,tasks));
 
 	i = 0;
 	off = 0;
 
-	kt_list_head_for_each(0, tasks, init_task + kt_task_struct.tasks, off) {
+	list_head_for_each(tasks, init_task + MEMBER_OFFSET(task_struct,tasks), off) {
 		struct thread_info *info;
 		struct inferior *in;
 		int pid;
@@ -136,19 +464,20 @@ static int init_values(void)
 		struct regcache *rc;
 		long long val;
 
-		off_task = off - kt_task_struct.tasks;
-		task = kdump_type_alloc((struct kdump_type*)&kt_task_struct, off_task, 0, task);
+		off_task = off - MEMBER_OFFSET(task_struct,tasks);
+		printf("TRACEUr %lx,%lx\n", (unsigned long int)off, (unsigned long int)off_task);
+		if (KDUMP_TYPE_GET(task_struct, off_task, task)) goto error;
 
-		state = kt_int_value(task + kt_task_struct.state);
-		pid = kt_int_value(task + kt_task_struct.pid);
-		stack = kt_ptr_value(task + kt_task_struct.stack);
-		rsp = kt_ptr_value(task + kt_task_struct.thread + kt_thread_struct.sp);
-		b = kdump_type_alloc((struct kdump_type*)&kt_voidp, rsp, 0, b);
+		state = kt_int_value(task + MEMBER_OFFSET(task_struct,state));
+		pid = kt_int_value(task + MEMBER_OFFSET(task_struct,pid));
+		stack = kt_ptr_value(task + MEMBER_OFFSET(task_struct,stack));
+		rsp = kt_ptr_value(task + MEMBER_OFFSET(task_struct,thread) + MEMBER_OFFSET(thread_struct,sp));
+		if (KDUMP_TYPE_GET(_voidp, rsp, b)) goto error;
 		rip = kt_ptr_value(b);
 #ifdef _DEBUG
-		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + kt_task_struct.comm);
+		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + MEMBER_OFFSET(task_struct,comm));
 #endif
-		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + kt_task_struct.comm);
+		fprintf(stdout, "TASK %llx,%llx,%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + MEMBER_OFFSET(task_struct,comm));
 
 		if (pid == 0) continue;
 		in = current_inferior();
@@ -157,57 +486,124 @@ static int init_values(void)
 		add_thread(tt);
 		inferior_ptid = tt;
 		info = find_thread_ptid (tt);
-		info->name = strdup(task + kt_task_struct.comm);
+		info->name = strdup(task + MEMBER_OFFSET(task_struct,comm));
 			
 		val = 0;
 
 		rc = get_thread_regcache (tt);
 
-		for (i = 0; i < 55; i++) {
-			val = 0x12400 + i;
-			val = __bswap_64(val);
-			regcache_raw_supply(rc, i, &val);
+		if (types.arch == ARCH_S390X) {
+			for (i = 0; i < 55; i++) {
+				val = 0x12400 + i;
+				val = __bswap_64(val);
+				regcache_raw_supply(rc, i, &val);
+			}
+			val = __bswap_64(rip);
+			regcache_raw_supply(rc, 1, &val);
 		}
-		val = __bswap_64(rip);
-		regcache_raw_supply(rc, 1, &val);
-		/* 
-		 * The task is not running - e.g. crash would show it's stuck in schedule()
-		 * Yet schedule() is not on it's stack.
-		 *
-		 */
-		if (state != 0) {
-			long long regs[6];
-
-			/*
-			 * So we're gonna skip its stackframe
-			 * FIXME: use the size obtained from debuginfo
+		if (types.arch == ARCH_S390X) {
+			val = __bswap_64(rip); 
+			regcache_raw_supply(rc, 7, &val);
+			regcache_write_pc(rc, rip);
+			val = __bswap_64(rsp);
+			regcache_raw_supply(rc, 17, &val);
+		} else if (types.arch == ARCH_X86_64) {
+			/* 
+			 * The task is not running - e.g. crash would show it's stuck in schedule()
+			 * Yet schedule() is not on it's stack.
+			 *
 			 */
-			rsp += 0x148;
-			target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6);
+			if (state != 0) {
+				long long regs[6];
+
+				/*
+				 * So we're gonna skip its stackframe
+				 * FIXME: use the size obtained from debuginfo
+				 */
+				rsp += 0x148;
+				target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6);
 
 
-			regcache_raw_supply(rc, 15, &regs[5]);
-			regcache_raw_supply(rc, 14, &regs[4]);
-			regcache_raw_supply(rc, 13, &regs[3]);
-			regcache_raw_supply(rc, 12, &regs[2]);
-			regcache_raw_supply(rc, 6, &regs[1]);
-			regcache_raw_supply(rc, 3, &regs[0]);
+				regcache_raw_supply(rc, 15, &regs[5]);
+				regcache_raw_supply(rc, 14, &regs[4]);
+				regcache_raw_supply(rc, 13, &regs[3]);
+				regcache_raw_supply(rc, 12, &regs[2]);
+				regcache_raw_supply(rc, 6, &regs[1]);
+				regcache_raw_supply(rc, 3, &regs[0]);
 
-			//rip = 0xffffffff8145ff0b;
-			b = kdump_type_alloc((struct kdump_type*)&kt_voidp, rsp, 0, b);
-			rip = kt_ptr_value(b);
-			rsp += 8;
+				//rip = 0xffffffff8145ff0b;
+				KDUMP_TYPE_GET(_voidp, rsp, b);
+				rip = kt_ptr_value(b);
+				rsp += 8;
+			}
 		}
-		val = __bswap_64(rip); 
-		regcache_raw_supply(rc, 7, &val);
-		regcache_write_pc(rc, rip);
-		val = __bswap_64(rsp);
-		regcache_raw_supply(rc, 17, &val);
 	}
 
 error:
 	if (b) free(b);
 	if (init_task) free(init_task);
+
+	return 0;
+}
+
+static int kdump_do_init(void);
+
+static int kdump_do_init(void)
+{
+	const bfd_arch_info_type *ait;
+	struct gdbarch_info gai;
+	struct gdbarch *garch;
+	struct inferior *inf;
+	const char *archname;
+	ptid_t tt;
+
+	struct {
+		char *kdident;
+		char *gdbident;
+		int flags;
+		t_arch arch;
+	} *a, archlist[] = {
+		{"x86_64", "i386:x86-64", 0, ARCH_X86_64},
+		{"s390x",  "s390:64-bit", 1, ARCH_S390X},
+		{NULL}
+	};
+
+	archname = kdump_arch_name(dump_ctx);
+	if (! archname) {
+		error(_("The architecture could not be identified"));
+		return -1;
+	}
+	for (a = archlist; a->kdident && strcmp(a->kdident, archname); a++);
+
+	if (! a->kdident) {
+		error(_("Architecture %s is not yet supported by gdb-kdump\n"), archname);
+		return -2;
+	}
+
+	gdbarch_info_init(&gai);
+	ait = bfd_scan_arch (a->gdbident);
+	if (! ait) {
+		error(_("Architecture %s not supported in gdb\n"), a->gdbident);
+		return -3;
+	}
+	gai.bfd_arch_info = ait;
+	garch = gdbarch_find_by_info(gai);
+	kdump_gdbarch = garch; 
+#ifdef _DEBUG
+	fprintf(stderr, "arch=%s,ait=%p,garch=%p\n", selected_architecture_name(), ait, garch);
+#endif
+	init_thread_list();
+	inf = current_inferior();
+
+	types.arch = a->arch;
+	
+	if (init_types(a->flags)) {
+		fprintf(stderr, "Cannot init types!\n");
+	}
+	if (init_values()) {
+		fprintf(stderr, "Cannot init values!\n");
+	}
+	reinit_frame_cache();
 
 	return 0;
 }
@@ -272,58 +668,9 @@ kdump_open (const char *arg, int from_tty)
 	  perror_with_name (filename);
 
 	push_target (&core_ops);
-	{
-		const bfd_arch_info_type *ait;
-		struct gdbarch_info gai;
-		struct gdbarch *garch;
-		struct inferior *inf;
-		const char *archname;
-		ptid_t tt;
-
-		struct {
-			char *kdident;
-			char *gdbident;
-			int flags;
-		} *a, archlist[] = {
-			{"x86_64", "i386:x86-64", 0},
-			{"s390x",  "s390:64-bit", 1},
-			{NULL}
-		};
-
-		archname = kdump_arch_name(dump_ctx);
-		if (! archname) {
-			error(_("The architecture could not be identified"));
-			return;
-		}
-		for (a = archlist; a->kdident && strcmp(a->kdident, archname); a++);
-
-		if (! a->kdident) {
-			error(_("Architecture %s is not yet supported by gdb-kdump\n"), archname);
-			return;
-		}
-
-		gdbarch_info_init(&gai);
-		ait = bfd_scan_arch (a->gdbident);
-		if (! ait) {
-			error(_("Architecture %s not supported in gdb\n"), a->gdbident);
-			return;
-		}
-		gai.bfd_arch_info = ait;
-		garch = gdbarch_find_by_info(gai);
-		kdump_gdbarch = garch; 
-#ifdef _DEBUG
-		fprintf(stderr, "arch=%s,ait=%p,garch=%p\n", selected_architecture_name(), ait, garch);
-#endif
-		init_thread_list();
-		inf = current_inferior();
-		
-		if (init_types(a->flags)) {
-			fprintf(stderr, "Cannot init types!\n");
-		}
-		if (init_values()) {
-			fprintf(stderr, "Cannot init values!\n");
-		}
-		reinit_frame_cache();
+	
+	if (kdump_do_init()) {
+		error(_("Cannot initialize kdump"));
 	}
 
 	return;
@@ -372,7 +719,7 @@ kdump_xfer_partial (struct target_ops *ops, enum target_object object,
 		  offset = transform_memory((kdump_paddr_t)offset);
 		  r = kdump_read(dump_ctx, (kdump_paddr_t)offset, (unsigned char*)readbuf, (size_t)len, KDUMP_PHYSADDR);
 		  if (r != len) {
-			  error(_("Cannot read %lu bytes from %llu (%lld)!"), (size_t)len, (long long)offset, (long long)r);
+			  error(_("Cannot read %lu bytes from %lx (%lld)!"), (size_t)len, (long unsigned int)offset, (long long)r);
 		  } else 
 		*xfered_len = len;
 		  return TARGET_XFER_OK;
@@ -430,8 +777,6 @@ core_has_registers (struct target_ops *ops)
 {
 	return 1;
 }
-
-
 
 void
 kdump_file_command (char *filename, int from_tty);
