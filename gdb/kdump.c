@@ -55,6 +55,7 @@
 #include "s390-linux-tdep.h"
 #include "kdumpfile.h"
 
+#include <dirent.h>
 #ifndef O_LARGEFILE
 #define O_LARGEFILE 0
 #endif
@@ -87,8 +88,8 @@ static void core_close (struct target_ops *self);
 
 typedef unsigned long long offset;
 
-#define KDUMP_TYPE const char *name; int size; int offset; struct type *origtype
-#define GET_GDB_TYPE(typ) types. typ .origtype
+#define KDUMP_TYPE const char *_name; int _size; int _offset; struct type *_origtype
+#define GET_GDB_TYPE(typ) types. typ ._origtype
 #define GET_TYPE_SIZE(typ) (TYPE_LENGTH(GET_GDB_TYPE(typ)))
 #define NULL_offset 0LL
 #define F_BIG_ENDIAN 1
@@ -260,6 +261,17 @@ struct {
 		offset ss;		
 	} pt_regs;
 
+
+	struct {
+		KDUMP_TYPE;
+		offset list;
+		offset version;
+		offset srcversion;
+		offset name;
+		offset module_core;
+	} module;
+
+
 	int flags;
 	t_arch arch;
 
@@ -273,11 +285,24 @@ struct {
 	int ncpus;
 } types;
 
+struct task_info {
+	offset task_struct;
+	offset sp;
+	offset ip;
+	int pid;
+};
+
 enum {
 	T_STRUCT = 1,
 	T_BASE,
 	T_REF
 };
+
+static void free_task_info(struct private_thread_info *addr)
+{
+	struct task_info *ti = (struct task_info*)addr;
+	free(ti);
+}
 
 unsigned long long kt_int_value (void *buff)
 {
@@ -316,7 +341,8 @@ static offset get_symbol_address(const char *sname)
 	struct value *val;
 	ss = lookup_global_symbol(sname, NULL, VAR_DOMAIN);
 	if (! ss) {
-		return NULL_offset ;
+		ss = lookup_static_symbol("modules", VAR_DOMAIN);
+		if (! ss) return NULL_offset ;
 	}
 	lang  = language_def (SYMBOL_LANGUAGE (ss));
 	val = lang->la_read_var_value (ss, NULL);
@@ -326,6 +352,16 @@ static offset get_symbol_address(const char *sname)
 	return (offset) value_address(val);
 }
 
+/**
+ * Searches the gdb for the type of specified name of the specified kind.
+ *
+ * @param _type on successfull return contains pointer to type
+ * @param size on successfull return contains type size
+ * @param origname the name of type
+ * @param origtype T_STRUCT or T_REF or T_BASE
+ *
+ * @return 0 on success
+ */
 static int kdump_type_init (struct type **_type, int *size, const char *origname, int origtype)
 {
 	struct type *t;
@@ -401,19 +437,19 @@ int kdump_types_init(int flags)
 	
 	types.flags = flags;
 
-	#define INIT_STRUCT(name) if(kdump_type_init(&types. name .origtype, &types. name .size, #name, T_STRUCT)) { fprintf(stderr, "Cannot find struct type \'%s\'", #name); break; }
-	#define INIT_BASE_TYPE(name) if(kdump_type_init(&types. name .origtype, &types. name .size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
+	#define INIT_STRUCT(name) if(kdump_type_init(&types. name ._origtype, &types. name ._size, #name, T_STRUCT)) { fprintf(stderr, "Cannot find struct type \'%s\'", #name); break; }
+	#define INIT_BASE_TYPE(name) if(kdump_type_init(&types. name ._origtype, &types. name ._size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
 	/** initialize base type and supply its name */
-	#define INIT_BASE_TYPE_(name,tname) if(kdump_type_init(&types. tname .origtype, &types. tname .size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
-	#define INIT_REF_TYPE(name) if(kdump_type_init(&types. name .origtype, &types. name .size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
-	#define INIT_REF_TYPE_(name,tname) if(kdump_type_init(&types. tname .origtype, &types. tname .size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
-	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname .origtype, #mname, &types. sname . mname)) { break; }
+	#define INIT_BASE_TYPE_(name,tname) if(kdump_type_init(&types. tname ._origtype, &types. tname ._size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
+	#define INIT_REF_TYPE(name) if(kdump_type_init(&types. name ._origtype, &types. name ._size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
+	#define INIT_REF_TYPE_(name,tname) if(kdump_type_init(&types. tname ._origtype, &types. tname ._size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
+	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)) { break; }
 
 	/** initialize member with different name than the containing one */
-	#define INIT_STRUCT_MEMBER_(sname,mname,mmname) if(kdump_type_member_init(types. sname .origtype, #mname, &types. sname . mmname)) { break; }
+	#define INIT_STRUCT_MEMBER_(sname,mname,mmname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mmname)) { break; }
 
 	/** don't fail if the member is not present */
-	#define INIT_STRUCT_MEMBER__(sname,mname) kdump_type_member_init(types. sname .origtype, #mname, &types. sname . mname)
+	#define INIT_STRUCT_MEMBER__(sname,mname) kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)
 	do {
 		INIT_BASE_TYPE_(int,_int); 
 		INIT_REF_TYPE_(void,_voidp); 
@@ -504,6 +540,13 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER__(pt_regs, flags);
 		INIT_STRUCT_MEMBER__(pt_regs, sp);
 		INIT_STRUCT_MEMBER__(pt_regs, ss);
+
+		INIT_STRUCT(module);
+		INIT_STRUCT_MEMBER(module, list);
+		INIT_STRUCT_MEMBER(module, version);
+		INIT_STRUCT_MEMBER(module, srcversion);
+		INIT_STRUCT_MEMBER(module, name);
+		INIT_STRUCT_MEMBER(module, module_core);
 		ret = 0;
 	} while(0);
 
@@ -617,7 +660,6 @@ static void init_runqueues(void)
 
 	runq = KDUMP_TYPE_ALLOC(rq);
 
-	printf("ncpus=%d\n", types.ncpus);
 	for(i = 0; i < types.ncpus; i++) {
 		r = get_percpu_offset("runqueues", i);
 		if (r == NULL_offset) {
@@ -631,7 +673,9 @@ static void init_runqueues(void)
 		curr = kt_ptr_value(runq + MEMBER_OFFSET(rq,curr));
 
 		types.cpu[i].rq.curr = curr;
+#ifdef _DEBUG
 		printf("cpu%02d->curr=%llx\n", i, curr);
+#endif
 	}
 out:
 	KDUMP_TYPE_FREE(runq);
@@ -666,6 +710,8 @@ static int init_values(void)
 	int i, cpu;
 	int hashsize;
 	struct inferior *in;
+	int cnt = 0;
+	struct task_info *task_info;
 
 	s = NULL;
 	
@@ -706,6 +752,7 @@ static int init_values(void)
 	i = 0;
 	off = 0;
 
+	print_thread_events = 0;
 	in = current_inferior();
 	inferior_appeared (in, 1);
 
@@ -723,11 +770,17 @@ static int init_values(void)
 		pid = kt_int_value(task + MEMBER_OFFSET(task_struct,pid));
 		stack = kt_ptr_value(task + MEMBER_OFFSET(task_struct,stack));
 		_rsp = rsp = kt_ptr_value(task + MEMBER_OFFSET(task_struct,thread) + MEMBER_OFFSET(thread_struct,sp));
+
+		task_info = malloc(sizeof(struct task_info));
+		task_info->pid = pid;
+
 		if (types.arch == ARCH_S390X) {
 			if (! KDUMP_TYPE_GET(_voidp, rsp+136, b)) 
 				rip = kt_ptr_value(b);
 			if (KDUMP_TYPE_GET(_voidp, rsp+144, b)) goto error;
 			rsp = kt_ptr_value(b);
+			task_info->sp = rsp;
+			task_info->ip = rip;
 		} else {
 			if (KDUMP_TYPE_GET(_voidp, rsp, b)) goto error;
 			rip = kt_ptr_value(b);
@@ -735,22 +788,31 @@ static int init_values(void)
 #ifdef _DEBUG
 		fprintf(stdout, "TASK %llx,%llx,rsp=%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + MEMBER_OFFSET(task_struct,comm));
 #endif
-		fprintf(stdout, "TASK %llx,%llx,rsp=%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + MEMBER_OFFSET(task_struct,comm));
+		if (pid == 0) {
+			free_task_info((struct private_thread_info*)task_info);
+			continue;
+		}
 
-		if (pid == 0) continue;
+		task_info->task_struct = off_task;
+
 		tt = ptid_build (1, pid, 0);
 		info = add_thread(tt);
+		info->private = (struct private_thread_info*)task_info;
+		info->private_dtor = free_task_info;
 
 		inferior_ptid = tt;
-		//info = find_thread_ptid (tt);
 		info->name = strdup(task + MEMBER_OFFSET(task_struct,comm));
 	
 		val = 0;
+		cnt ++;
 
 		rc = get_thread_regcache (tt);
 
 		if (types.arch == ARCH_S390X) {
 
+			/*
+			 * TODO: implement retrieval of register values from lowcore 
+			 */
 			val = __bswap_64(rip); 
 			regcache_raw_supply(rc, 1, &val);
 
@@ -788,7 +850,6 @@ static int init_values(void)
 				rsp += 0x148;
 				target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6);
 
-
 				regcache_raw_supply(rc, 15, &regs[5]);
 				regcache_raw_supply(rc, 14, &regs[4]);
 				regcache_raw_supply(rc, 13, &regs[3]);
@@ -801,8 +862,10 @@ static int init_values(void)
 				rsp += 8;
 
 				regcache_raw_supply(rc, 7, &rsp);
-		//		regcache_write_pc(rc, rip);
 				regcache_raw_supply(rc, 16, &rip);
+
+				task_info->sp = rsp;
+				task_info->ip = rip;
 			} else {
 				kdump_reg_t reg;
 
@@ -813,7 +876,9 @@ static int init_values(void)
 #define REG(en,mem) kdump_read_reg(dump_ctx, cpu, GET_REGISTER_OFFSET(mem), &reg); regcache_raw_supply(rc, en, &reg)
 			
 				REG(reg_RSP,sp);
+				task_info->sp = reg;
 				REG(reg_RIP,ip);
+				task_info->ip = reg;
 				REG(reg_RAX,ax);
 				REG(reg_RCX,cx);
 				REG(reg_RDX,dx);
@@ -839,11 +904,13 @@ static int init_values(void)
 #undef REG
 			}
 		}
+		printf_unfiltered(_("Loaded processes: %d\r"), cnt);
 	}
 
 	if (b) free(b);
 	if (init_task) free(init_task);
 
+	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	return 0;
 error:
 	if (b) free(b);
@@ -993,16 +1060,9 @@ core_detach (struct target_ops *ops, const char *args, int from_tty)
 static kdump_paddr_t transform_memory(kdump_paddr_t addr);
 static kdump_paddr_t transform_memory(kdump_paddr_t addr)
 {
-/* FIXME: we do have to implement full scale
- * virtual memory mapping! 
- * if (addr > 0xffffffffa0000000) ...
- */
-	if (addr > 0xffffffff80000000)
-		return(addr&0xfffffff);
-	if (addr > 0xffff880000000000)
-		return(addr&0xffffffffff);
-	else return(addr);
-	
+	kdump_paddr_t out;
+	if (kdump_ok == kdump_vtop(dump_ctx, addr, &out)) return out;
+	return addr;
 }
 
 static enum target_xfer_status
@@ -1076,6 +1136,7 @@ static int core_has_registers (struct target_ops *ops)
 	return 1;
 }
 
+#ifdef _DEBUG
 void kdumptest_file_command (char *filename, int from_tty);
 void kdumptest_file_command (char *filename, int from_tty)
 {
@@ -1097,6 +1158,9 @@ void kdumptest_file_command (char *filename, int from_tty)
 	}
 	addr = value_address(val);
 	printf("symbol = %llx\n", (unsigned long long)addr);
+
+	ss = lookup_static_symbol("modules", VAR_DOMAIN);
+	printf("MOD:symbol = %llx\n", (unsigned long long)ss);
 
 	sal = find_pc_line (addr, 0);     
 	if (sal.line) {
@@ -1146,8 +1210,6 @@ void kdumptest_file_command (char *filename, int from_tty)
 				}
 			}
 		}
-		
-
 	}
 
 	printf ("percpu(runqueues,1)=%llx\n", get_percpu_offset("runqueues",1));
@@ -1158,11 +1220,12 @@ void kdumptest_file_command (char *filename, int from_tty)
 
 	return;
 }
+#endif
 
 void kdump_file_command (char *filename, int from_tty);
 void kdump_file_command (char *filename, int from_tty)
 {
-	dont_repeat ();		/* Either way, seems bogus.  */
+	dont_repeat ();
 
 	gdb_assert (kdump_target != NULL);
 
@@ -1172,6 +1235,246 @@ void kdump_file_command (char *filename, int from_tty)
 		(kdump_target->to_open) (filename, from_tty);
 }
 
+/**
+ * The following code is meant to just search the given path
+ * for the modules debuginfo files.
+ */
+struct t_directory {
+	char *name;
+	struct t_directory *parent;
+	struct t_directory *next;
+	struct t_directory *_next;
+};
+
+struct t_node {
+	char *filename;
+	struct t_node *lt;
+	struct t_node *gt;
+	struct t_directory *parent;
+	struct t_node *_next;
+};
+
+static struct t_node *rootnode;
+static struct t_directory rootdir;
+static char rootname[NAME_MAX];
+static struct t_node *nodelist;
+
+static void putname(char *path, struct t_directory *dir)
+{
+	char *v, *c = path;
+	for (v = path; dir; dir = dir->parent) {
+		const char *e = dir->name + strlen(dir->name) - 1;
+		*v++ = '/';
+		while (e >= dir->name)
+			*v++ = *e--;
+	}
+	*v-- = '\0';
+	while (v > path) {
+		char z = *v;
+		*v = *path;
+		*path = z;
+		v --;
+		path ++;
+	}
+}
+
+static void insertnode(struct t_node *node, struct t_node **where)
+{
+	while(* where) {
+		int ret = strcmp(node->filename, (*where)->filename);
+		if (ret < 0) where = & (*where)->lt;
+		else if (ret > 0) where = & (*where)->gt;
+		else break;
+	}
+	* where = node;
+	return;
+}
+
+/**
+ * Finds the file of the given name (only the files', not full path).
+ * If found, it puts its full path in output and returns !NULL .
+ * If not found, it returns NULL.
+ */
+static const char *find_module(const char *name, char *output)
+{
+	struct t_node *nod = rootnode;
+	int ret;
+
+	while(nod && (ret = strcmp(nod->filename, name)) != 0) {
+		if (ret > 0) nod = nod->lt;
+		else if (ret < 0) nod = nod->gt;
+	}
+	if (! nod) return NULL;
+	putname(output, nod->parent);
+	strcat(output, nod->filename);
+	return output;
+}
+
+static void free_module_list(void)
+{
+	struct t_directory *n, *p;
+	struct t_node *no, *po;
+	
+	for (n = rootdir._next; ; n = p) {
+		if (!n) break;
+		p = n->_next;
+		if (n->name) free (n->name);
+		free (n);
+	}
+
+	for (no = nodelist; ; no = po) {
+		if (!no) break;
+		po = no->_next;
+		if (no->filename) free (no->filename);
+		free (no);
+	}
+
+	rootdir._next = NULL;
+	nodelist = NULL;
+}
+
+/** 
+ * Init the list of modules - walk through p_path and remember
+ * all the regular files with names ending on p_suffix.
+ */
+static void init_module_list(const char *p_path, const char *p_suffix)
+{
+	char path[NAME_MAX];
+	struct t_directory *di;
+	int suffixlen;
+	DIR *d;
+
+	suffixlen = strlen(p_suffix);
+	rootnode = NULL;
+	nodelist = NULL;
+	di = &rootdir;
+	snprintf(rootname, sizeof(rootname)-1, "%s", p_path);
+	rootdir.name = rootname;
+	rootdir.parent = NULL;
+	rootdir.next = NULL;
+
+	while(di) {
+		struct dirent en, *_en;
+		putname(path, di);
+		d = opendir(path);
+		if (!d) {
+			fprintf(stderr, "Cannot open dir %s!\n", path);
+			return;
+		}
+		while (! readdir_r(d, &en, &_en) && (_en)) {
+			if (en.d_name[0] == '.') continue;
+			if (en.d_type == DT_DIR) {
+				struct t_directory *ndi = malloc(sizeof(struct t_directory));
+				ndi->_next = rootdir._next;
+				rootdir._next = ndi;
+				ndi->next = di->next;
+				ndi->name = strdup(en.d_name);
+				ndi->parent = di;
+				di->next = ndi;
+			} else if (en.d_type == DT_REG) {
+				int l = strlen(en.d_name);
+
+				if (l > suffixlen && !strcmp(en.d_name+l-suffixlen, p_suffix)) {
+					struct t_node *nod = malloc(sizeof(struct t_node));
+					nod->_next = nodelist;
+					nodelist = nod;
+					nod->filename = strdup(en.d_name);
+					nod->parent = di;
+					nod->lt = nod->gt = NULL;
+					insertnode(nod, &rootnode);
+				} 
+			}
+		}
+		closedir(d);
+		di = di->next;
+	}
+}
+
+static void kdumpmodules_command (char *filename, int from_tty);
+static void kdumpmodules_command (char *filename, int from_tty)
+{
+	offset sym_modules, modules, mod, off_mod, addr;
+	char *module = NULL;
+	char *v = NULL;
+	char modulename[56+9+1];
+	char modulepath[NAME_MAX];
+	int flags = OBJF_USERLOADED | OBJF_SHARED;
+	struct section_addr_info *section_addrs;
+	struct objfile *objf;
+
+	if (dump_ctx == NULL) {
+		error(_("dump_ctx == NULL\n")); 
+	}
+	if (! filename || ! strlen(filename)) {
+		error(_("Specify name of directory to load the modules debuginfo from"));
+	}
+	section_addrs = alloc_section_addr_info (1);
+	section_addrs->other[0].name = ".text";
+
+	/* search the path for modules */
+	init_module_list(filename, ".ko.debug");
+	module = KDUMP_TYPE_ALLOC(module);
+	v = KDUMP_TYPE_ALLOC(_voidp);
+	sym_modules = get_symbol_address("modules");
+	if(KDUMP_TYPE_GET(_voidp, sym_modules, v)) goto error;
+	modules = kt_ptr_value(v);
+
+	/* now walk through the module list (of the dumped kernel) and for each module
+	 * try to find it's debuginfo file */
+	list_head_for_each(modules, v, mod) {
+		if (mod == sym_modules) break;
+		off_mod = mod - MEMBER_OFFSET(module,list);
+		if(KDUMP_TYPE_GET(module, off_mod, module)) goto error;
+		snprintf(modulename, sizeof(modulename)-1, "%s.ko.debug", module + MEMBER_OFFSET(module,name));
+		if (! find_module(modulename, modulepath)) {
+			warning(_("Cannot find debuginfo file for module \"%s\""), modulename);
+			continue;
+		}
+		addr = kt_ptr_value(module + MEMBER_OFFSET(module,module_core));
+#ifdef _DEBUG
+		fprintf(stderr, "Going to load module %s at %llx\n", modulepath, addr);
+#endif
+		section_addrs->other[0].addr = addr;
+		section_addrs->num_sections = 1;
+
+		/* load the module' debuginfo (at its module_core address) */
+		objf = symbol_file_add (modulepath, from_tty ? SYMFILE_VERBOSE : 0,
+				  section_addrs, flags);
+		add_target_sections_of_objfile (objf);
+	}
+	
+	error:
+
+	if (v) free(v);
+	if (module) free(module);
+	free_module_list();
+}
+
+static void kdumpps_command(char *fn, int from_tty);
+static void kdumpps_command(char *fn, int from_tty)
+{
+	struct thread_info *tp;
+	struct task_info *task;
+
+	if (dump_ctx == NULL) {
+		error(_("dump_ctx == NULL\n")); 
+	}
+	for (tp = thread_list; tp; tp = tp->next) {
+		task = (struct task_info*)tp->private;
+		if (!task) continue;
+		printf_filtered(_("% 7d %llx %llx %llx %s\n"), task->pid, task->task_struct, task->ip, task->sp, tp->name);
+	}
+}
+
+static char *
+kdump_pid_to_str (struct target_ops *ops, ptid_t ptid)
+{
+	static char buf[32];
+	xsnprintf (buf, sizeof buf, "pid %ld", ptid_get_lwp (ptid));
+	return buf;
+}
+
+struct cmd_list_element *kdumplist = NULL;
 static void init_core_ops (void)
 {
 	struct cmd_list_element *c;
@@ -1192,24 +1495,36 @@ static void init_core_ops (void)
 	core_ops.to_has_stack = core_has_stack;
 	core_ops.to_has_registers = core_has_registers;
 	core_ops.to_magic = OPS_MAGIC;
+	core_ops.to_pid_to_str = kdump_pid_to_str;
 
 	if (kdump_target)
 		internal_error (__FILE__, __LINE__, 
 			_("init_kdump_ops: core target already exists (\"%s\")."),
 			kdump_target->to_longname);
+
 	kdump_target = &core_ops;
 
-	c = add_cmd ("kdumptest", class_files, kdumptest_file_command, _("\
-Test command"), &cmdlist);
-	c = add_cmd ("kdump-file", class_files, kdump_file_command, _("\
-Use FILE as kdump for examining memory and registers.\n\
-No arg means have no core file.  This command has been superseded by the\n\
-`target core' and `detach' commands."), &cmdlist);
+	c = add_prefix_cmd ("kdump", no_class, kdumpmodules_command, 
+		_("Commands for ease work with kernel dump target"),
+		&kdumplist, "kdump ", 0, &cmdlist);
+
+	c = add_cmd ("modules", class_files, kdumpmodules_command, 
+		_("Load modules debuginfo from directory"), &kdumplist);
+	set_cmd_completer (c, filename_completer);
+
+	c = add_cmd ("ps", class_files, kdumpps_command, 
+		_("Print ps info"), &kdumplist);
 
 	set_cmd_completer (c, filename_completer);
+
+#ifdef _DEBUG
+	c = add_cmd ("kdumptest", class_files, kdumptest_file_command, _("\
+Test command"), &kdumplist);
+#endif
 }
 
-void _initialize_kdump (void)
+void 
+_initialize_kdump (void)
 {
 	init_core_ops ();
 
