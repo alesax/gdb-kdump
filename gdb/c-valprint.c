@@ -270,6 +270,12 @@ c_val_print (struct type *type, const gdb_byte *valaddr,
 	{
 	  int want_space;
 
+		if (TYPE_CODE(elttype) == TYPE_CODE_STRUCT) {
+			if (TYPE_TAG_NAME(elttype))
+				fprintf_filtered (stream, _("(struct %s*) "), TYPE_TAG_NAME(elttype));
+			else if (TYPE_NAME(elttype))
+				fprintf_filtered (stream, _("(struct %s*) "), TYPE_NAME(elttype));
+		}
 	  addr = unpack_pointer (type, valaddr + embedded_offset);
 	print_unpacked_pointer:
 
