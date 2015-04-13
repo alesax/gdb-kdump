@@ -290,6 +290,8 @@ struct task_info {
 	offset sp;
 	offset ip;
 	int pid;
+	int cpu;
+	offset rq;
 };
 
 enum {
@@ -333,15 +335,16 @@ unsigned long long kt_ptr_value (void *buff)
 	return val;
 }
 
-static offset get_symbol_address(const char *sname);
-static offset get_symbol_address(const char *sname)
+static offset get_symbol_value(const char *sname);
+static offset get_symbol_value(const char *sname)
 {
 	struct symbol *ss;
 	const struct language_defn *lang;
 	struct value *val;
+	offset off;
 	ss = lookup_global_symbol(sname, NULL, VAR_DOMAIN);
 	if (! ss) {
-		ss = lookup_static_symbol("modules", VAR_DOMAIN);
+		ss = lookup_static_symbol(sname, VAR_DOMAIN);
 		if (! ss) return NULL_offset ;
 	}
 	lang  = language_def (SYMBOL_LANGUAGE (ss));
@@ -349,7 +352,13 @@ static offset get_symbol_address(const char *sname)
 	if (! val) {
 		return NULL_offset;
 	}
-	return (offset) value_address(val);
+
+	if (TYPE_CODE(value_type(val)) == TYPE_CODE_ENUM) {
+		return (offset) value_as_long(val);
+	} else {
+		off = (offset) value_address(val);
+		return off;
+	}
 }
 
 /**
@@ -372,7 +381,7 @@ static int kdump_type_init (struct type **_type, int *size, const char *origname
 		struct type *dt;
  		dt = lookup_typename(current_language, kdump_gdbarch, origname, NULL, 0);
 		if (dt == NULL) {
-			fprintf (stderr, "Cannot lookup dereferenced type %s\n", origname);
+			warning(_("Cannot lookup dereferenced type %s\n"), origname);
 			t = NULL;
 		} else {
 			t = lookup_reference_type(dt);
@@ -381,7 +390,7 @@ static int kdump_type_init (struct type **_type, int *size, const char *origname
 		t = lookup_typename(current_language, kdump_gdbarch, origname, NULL, 0);
 
 	if (t == NULL) {
-		fprintf(stderr, "Cannot lookup(%s)\n", origname);
+		warning(_("Cannot lookup(%s)\n"), origname);
 		return 1;
 	}
 
@@ -415,7 +424,7 @@ static void *kdump_type_alloc(struct type *type)
 	allocated = 1;
 	buff = malloc(TYPE_LENGTH(type));
 	if (buff == NULL) {
-		fprintf (stderr, "Cannot allocate memory of %d length\n", (int)TYPE_LENGTH(type));
+		warning(_("Cannot allocate memory of %d length\n"), (int)TYPE_LENGTH(type));
 		return NULL;
 	}
 	return buff;
@@ -424,7 +433,7 @@ static void *kdump_type_alloc(struct type *type)
 static int kdump_type_get(struct type *type, offset addr, int pos, void *buff)
 {
 	if (target_read_raw_memory(addr + (TYPE_LENGTH(type)*pos), buff, TYPE_LENGTH(type))) {
-		fprintf (stderr, "Cannot read target memory of %d length\n", (int)TYPE_LENGTH(type));
+		warning(_("Cannot read target memory of %d length\n"), (int)TYPE_LENGTH(type));
 		return 1;
 	}
 	return 0;
@@ -610,7 +619,7 @@ static int init_types(int flags)
 		for (r = 0; ; r++) {
 			if (kdump_read_reg(dump_ctx, i, r, &reg)) break;
 #ifdef _DEBUG
-			fprintf(stdout, "CPU % 2d,REG%02d=%llx\n", i, r, (long long unsigned int)reg);
+			printf_filtered("CPU % 2d,REG%02d=%llx\n", i, r, (long long unsigned int)reg);
 #endif
 		}
 	}
@@ -629,7 +638,7 @@ static offset get_percpu_offset(const char *varname, int ncpu)
 	snprintf(buff, sizeof(buff)-1, "%s", varname);
 
 	do {
-		off = get_symbol_address(buff);
+		off = get_symbol_value(buff);
 		if (off >= OFFSET(percpu_start) && off <= OFFSET(percpu_end)) {
 			off = off + OFFSET(percpu_offsets[ncpu]);
 			break;
@@ -663,18 +672,18 @@ static void init_runqueues(void)
 	for(i = 0; i < types.ncpus; i++) {
 		r = get_percpu_offset("runqueues", i);
 		if (r == NULL_offset) {
-			fprintf(stderr, "Cannot get pcpu offset of \'runqueues\':%d\n", i);
+			error(_("Cannot get pcpu offset of \'runqueues\':%d\n"), i);
 			goto out;
 		}
 		if (KDUMP_TYPE_GET(rq, r, runq)) {
-			fprintf(stderr, "Cannot get runqueue\n");
+			error(_("Cannot get runqueue\n"));
 			goto out;
 		}
 		curr = kt_ptr_value(runq + MEMBER_OFFSET(rq,curr));
 
 		types.cpu[i].rq.curr = curr;
 #ifdef _DEBUG
-		printf("cpu%02d->curr=%llx\n", i, curr);
+		printf_filtered("cpu%02d->curr=%llx\n", i, curr);
 #endif
 	}
 out:
@@ -711,6 +720,7 @@ static int init_values(void)
 	int hashsize;
 	struct inferior *in;
 	int cnt = 0;
+	int pid_reserve;
 	struct task_info *task_info;
 
 	s = NULL;
@@ -718,9 +728,9 @@ static int init_values(void)
 	b = KDUMP_TYPE_ALLOC(_voidp);
 	if (!b) goto error;
 
-	OFFSET(percpu_start) = get_symbol_address("__per_cpu_start");
-	OFFSET(percpu_end) = get_symbol_address("__per_cpu_end");
-	off = get_symbol_address("__per_cpu_offset");
+	OFFSET(percpu_start) = get_symbol_value("__per_cpu_start");
+	OFFSET(percpu_end) = get_symbol_value("__per_cpu_end");
+	off = get_symbol_value("__per_cpu_offset");
 	types.cpu = malloc(sizeof(struct cpuinfo)*types.ncpus);
 	OFFSET(percpu_offsets) = malloc(sizeof(offset)*types.ncpus);
 	memset(OFFSET(percpu_offsets), 0, sizeof(offset)*types.ncpus);
@@ -735,9 +745,9 @@ static int init_values(void)
 
 	init_runqueues();
 
-	o_init_task = get_symbol_address("init_task");
+	o_init_task = get_symbol_value("init_task");
 	if (! o_init_task) {
-		fprintf(stderr, "Cannot find init_task\n");
+		warning(_("Cannot find init_task\n"));
 		return -1;
 	}
 	init_task = KDUMP_TYPE_ALLOC(task_struct);
@@ -751,6 +761,7 @@ static int init_values(void)
 
 	i = 0;
 	off = 0;
+	pid_reserve = 50000;
 
 	print_thread_events = 0;
 	in = current_inferior();
@@ -771,8 +782,10 @@ static int init_values(void)
 		stack = kt_ptr_value(task + MEMBER_OFFSET(task_struct,stack));
 		_rsp = rsp = kt_ptr_value(task + MEMBER_OFFSET(task_struct,thread) + MEMBER_OFFSET(thread_struct,sp));
 
+		if (pid == 0) pid = pid_reserve++;
 		task_info = malloc(sizeof(struct task_info));
 		task_info->pid = pid;
+		task_info->cpu = -1;
 
 		if (types.arch == ARCH_S390X) {
 			if (! KDUMP_TYPE_GET(_voidp, rsp+136, b)) 
@@ -788,7 +801,7 @@ static int init_values(void)
 #ifdef _DEBUG
 		fprintf(stdout, "TASK %llx,%llx,rsp=%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + MEMBER_OFFSET(task_struct,comm));
 #endif
-		if (pid == 0) {
+		if (pid < 0) {
 			free_task_info((struct private_thread_info*)task_info);
 			continue;
 		}
@@ -869,6 +882,7 @@ static int init_values(void)
 			} else {
 				kdump_reg_t reg;
 
+				task_info->cpu = cpu;
 #ifdef _DEBUG
 				printf("task is running on %d\n", cpu);
 #endif
@@ -970,10 +984,10 @@ static int kdump_do_init(void)
 	types.arch = a->arch;
 	
 	if (init_types(a->flags)) {
-		fprintf(stderr, "Cannot init types!\n");
+		warning(_("kdump: Cannot init types!\n"));
 	}
 	if (init_values()) {
-		fprintf(stderr, "Cannot init values!\n");
+		warning(_("kdump: Cannot init values!\n"));
 	}
 	set_executing(minus_one_ptid,0);
 	reinit_frame_cache();
@@ -1022,7 +1036,7 @@ kdump_open (const char *arg, int from_tty)
 	}
 
 	if (kdump_vtop_init(dump_ctx) != kdump_ok) {
-		error(_("Cannot kdump_vtop_init()\n"));
+		error(_("Cannot kdump_vtop_init(%s)\n"), kdump_err_str(dump_ctx));
 		return;
 	}
 
@@ -1218,6 +1232,8 @@ void kdumptest_file_command (char *filename, int from_tty)
 	if (gdbarch_unwind_sp_p (kdump_gdbarch))
 		printf("gdbarch_unwind_sp_p=TRUE\n");
 
+	fflush(stdout);
+	printf("PG_slab=%llx\n", get_symbol_value("PG_slab"));
 	return;
 }
 #endif
@@ -1358,7 +1374,7 @@ static void init_module_list(const char *p_path, const char *p_suffix)
 		putname(path, di);
 		d = opendir(path);
 		if (!d) {
-			fprintf(stderr, "Cannot open dir %s!\n", path);
+			error(_("Cannot open dir %s!\n"), path);
 			return;
 		}
 		while (! readdir_r(d, &en, &_en) && (_en)) {
@@ -1415,7 +1431,7 @@ static void kdumpmodules_command (char *filename, int from_tty)
 	init_module_list(filename, ".ko.debug");
 	module = KDUMP_TYPE_ALLOC(module);
 	v = KDUMP_TYPE_ALLOC(_voidp);
-	sym_modules = get_symbol_address("modules");
+	sym_modules = get_symbol_value("modules");
 	if(KDUMP_TYPE_GET(_voidp, sym_modules, v)) goto error;
 	modules = kt_ptr_value(v);
 
@@ -1455,6 +1471,7 @@ static void kdumpps_command(char *fn, int from_tty)
 {
 	struct thread_info *tp;
 	struct task_info *task;
+	char cpu[6];
 
 	if (dump_ctx == NULL) {
 		error(_("dump_ctx == NULL\n")); 
@@ -1462,7 +1479,9 @@ static void kdumpps_command(char *fn, int from_tty)
 	for (tp = thread_list; tp; tp = tp->next) {
 		task = (struct task_info*)tp->private;
 		if (!task) continue;
-		printf_filtered(_("% 7d %llx %llx %llx %s\n"), task->pid, task->task_struct, task->ip, task->sp, tp->name);
+		if (task->cpu == -1) cpu[0] = '\0';
+		else snprintf(cpu, 5, "% 4d", task->cpu);
+		printf_filtered(_("% 7d %llx %llx %llx %-4s %s\n"), task->pid, task->task_struct, task->ip, task->sp, cpu, tp->name);
 	}
 }
 
