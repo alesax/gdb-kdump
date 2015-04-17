@@ -166,7 +166,6 @@ mi_begin (struct ui_out *uiout, enum ui_out_type type, int level,
 
   if (data->suppress_output)
     return;
-
   mi_open (uiout, id, type);
 }
 
@@ -403,7 +402,7 @@ mi_out_new (int mi_version)
   int flags = 0;
 
   mi_out_data *data = XNEW (mi_out_data);
-  data->suppress_field_separator = 0;
+  data->suppress_field_separator = 1;
   data->suppress_output = 0;
   data->mi_version = mi_version;
   /* FIXME: This code should be using a ``string_file'' and not the

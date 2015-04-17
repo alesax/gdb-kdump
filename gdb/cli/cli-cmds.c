@@ -55,6 +55,7 @@
 #endif
 
 #include <fcntl.h>
+#include "mi/mi-out.h"
 
 /* Prototypes for local command functions */
 
@@ -1092,17 +1093,28 @@ print_disassembly (struct gdbarch *gdbarch, const char *name,
   if (!tui_is_window_visible (DISASSEM_WIN))
 #endif
     {
-      printf_filtered ("Dump of assembler code ");
-      if (name != NULL)
-        printf_filtered ("for function %s:\n", name);
-      else
-        printf_filtered ("from %s to %s:\n",
-			 paddress (gdbarch, low), paddress (gdbarch, high));
+      if (flags & DISASSEMBLY_HACK) {
+	struct ui_out *out;
+	out = mi_out_new (1);
+	//mi_begin(out, ui_out_type_tuple, 0, "aaaaa");
+	ui_out_begin (out, ui_out_type_tuple, NULL);
+	gdb_disassembly (gdbarch, out, 0, flags & ~DISASSEMBLY_OMIT_FNAME, -1, low, high);
+	ui_out_end (out, ui_out_type_tuple);
+	mi_out_put (out, gdb_stdout);
+	ui_out_destroy (out);
+      } else {
+	printf_filtered ("Dump of assembler code ");
+	if (name != NULL)
+	  printf_filtered ("for function %s:\n", name);
+	else
+	  printf_filtered ("from %s to %s:\n",
+			   paddress (gdbarch, low), paddress (gdbarch, high));
 
-      /* Dump the specified range.  */
-      gdb_disassembly (gdbarch, current_uiout, 0, flags, -1, low, high);
+	/* Dump the specified range.  */
+	gdb_disassembly (gdbarch, current_uiout, 0, flags, -1, low, high);
 
-      printf_filtered ("End of assembler dump.\n");
+	printf_filtered ("End of assembler dump.\n");
+      }
       gdb_flush (gdb_stdout);
     }
 #if defined(TUI)
@@ -1185,6 +1197,9 @@ disassemble_command (char *arg, int from_tty)
 	      break;
 	    case 'r':
 	      flags |= DISASSEMBLY_RAW_INSN;
+	      break;
+	    case 'h':
+	      flags |= DISASSEMBLY_HACK;
 	      break;
 	    default:
 	      error (_("Invalid disassembly modifier."));
@@ -1856,6 +1871,7 @@ Disassemble a specified section of memory.\n\
 Default is the function surrounding the pc of the selected frame.\n\
 With a /m modifier, source lines are included (if available).\n\
 With a /r modifier, raw instructions in hex are included.\n\
+With a /h modifier, MI2-formatted extra informations are dumped.\n\
 With a single argument, the function surrounding that address is dumped.\n\
 Two arguments (separated by a comma) are taken as a range of memory to dump,\n\
   in the form of \"start,end\", or \"start,+length\".\n\

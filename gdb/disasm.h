@@ -26,6 +26,7 @@
 #define DISASSEMBLY_OMIT_FNAME	(0x1 << 2)
 #define DISASSEMBLY_FILENAME	(0x1 << 3)
 #define DISASSEMBLY_OMIT_PC	(0x1 << 4)
+#define DISASSEMBLY_HACK   	(0x1 << 5)
 
 struct gdbarch;
 struct ui_out;
