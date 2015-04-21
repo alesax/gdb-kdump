@@ -54,6 +54,7 @@
 #include "filestuff.h"
 #include "s390-linux-tdep.h"
 #include "kdumpfile.h"
+#include "minsyms.h"
 
 #include <dirent.h>
 #ifndef O_LARGEFILE
@@ -334,7 +335,39 @@ unsigned long long kt_ptr_value (void *buff)
 	}
 	return val;
 }
+static offset get_symbol_address(const char *sname);
+static offset get_symbol_address(const char *sname)
+{
+	struct symbol *ss;
+	const struct language_defn *lang;
+	struct bound_minimal_symbol bms;
+	struct value *val;
+	offset off;
 
+	bms = lookup_minimal_symbol(sname, NULL, NULL);
+	if (bms.minsym != NULL) {
+		return ((offset)BMSYMBOL_VALUE_ADDRESS(bms));
+	}
+	ss = lookup_global_symbol(sname, NULL, ALL_DOMAIN);
+	if (! ss) {
+		ss = lookup_static_symbol(sname, ALL_DOMAIN);
+		if (! ss) return NULL_offset ;
+	}
+	lang  = language_def (SYMBOL_LANGUAGE (ss));
+	val = lang->la_read_var_value (ss, NULL);
+	if (! val) {
+		return NULL_offset;
+	}
+
+		off = (offset) value_address(val);
+		return off;
+	if (TYPE_CODE(value_type(val)) == TYPE_CODE_ENUM) {
+		return (offset) value_as_long(val);
+	} else {
+		off = (offset) value_address(val);
+		return off;
+	}
+}
 static offset get_symbol_value(const char *sname);
 static offset get_symbol_value(const char *sname)
 {
@@ -810,7 +843,7 @@ static int init_values(void)
 
 		tt = ptid_build (1, pid, 0);
 		info = add_thread(tt);
-		info->private = (struct private_thread_info*)task_info;
+		info->priv = (struct private_thread_info*)task_info;
 		info->private_dtor = free_task_info;
 
 		inferior_ptid = tt;
@@ -995,6 +1028,12 @@ static int kdump_do_init(void)
 	return 0;
 }
 
+static kdump_status kdump_get_symbol_val_cb(kdump_ctx *ctx, const char *name, kdump_addr_t *val)
+{
+	*val = (kdump_addr_t) get_symbol_address(name);
+	return kdump_ok;
+}
+
 static void
 kdump_open (const char *arg, int from_tty)
 {
@@ -1034,6 +1073,8 @@ kdump_open (const char *arg, int from_tty)
 		error(_("\"%s\" cannot be opened as kdump\n"), filename);
 		return;
 	}
+
+	kdump_cb_get_symbol_val(dump_ctx, kdump_get_symbol_val_cb);
 
 	if (kdump_vtop_init(dump_ctx) != kdump_ok) {
 		error(_("Cannot kdump_vtop_init(%s)\n"), kdump_err_str(dump_ctx));
@@ -1477,7 +1518,7 @@ static void kdumpps_command(char *fn, int from_tty)
 		error(_("dump_ctx == NULL\n")); 
 	}
 	for (tp = thread_list; tp; tp = tp->next) {
-		task = (struct task_info*)tp->private;
+		task = (struct task_info*)tp->priv;
 		if (!task) continue;
 		if (task->cpu == -1) cpu[0] = '\0';
 		else snprintf(cpu, 5, "% 4d", task->cpu);
