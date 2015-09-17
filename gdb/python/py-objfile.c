@@ -25,7 +25,7 @@
 #include "build-id.h"
 #include "symtab.h"
 
-typedef struct
+typedef struct objfile_object
 {
   PyObject_HEAD
 
@@ -653,6 +653,31 @@ objfile_to_objfile_object (struct objfile *objfile)
   return (PyObject *) object;
 }
 
+static PyObject *
+objfpy_get_sections (PyObject *self, void *closure)
+{
+  objfile_object *obj = (objfile_object *) self;
+  PyObject *dict;
+  asection *section = obj->objfile->sections->the_bfd_section;
+
+  dict = PyDict_New();
+  if (!dict)
+    return NULL;
+
+  while (section) {
+    PyObject *sec = section_to_section_object(section, obj->objfile);
+    if (!sec) {
+      PyObject_Del(dict);
+      return NULL;
+    }
+
+    PyDict_SetItemString(dict, section->name, sec);
+    section = section->next;
+  }
+
+  return PyDictProxy_New(dict);
+}
+
 int
 gdbpy_initialize_objfile (void)
 {
@@ -707,6 +732,8 @@ static PyGetSetDef objfile_getset[] =
     "Type printers.", NULL },
   { "xmethods", objfpy_get_xmethods, NULL,
     "Debug methods.", NULL },
+  { "sections", objfpy_get_sections, NULL,
+    "The sections that make up the objfile.", NULL },
   { NULL }
 };
 

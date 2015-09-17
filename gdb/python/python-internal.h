@@ -143,6 +143,8 @@ typedef int Py_ssize_t;
 #define PyEval_ReleaseLock()
 #endif
 
+#define gdb_py_long_from_pointer PyLong_FromLong
+
 /* Python supplies HAVE_LONG_LONG and some `long long' support when it
    is available.  These defines let us handle the differences more
    cleanly.  */
@@ -241,6 +243,10 @@ extern PyTypeObject block_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF("block_object");
 extern PyTypeObject symbol_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("symbol_object");
+extern PyTypeObject section_object_type;
+     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("section_object");
+extern PyTypeObject objfile_object_type;
+     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("objfile_object");
 extern PyTypeObject event_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("event_object");
 extern PyTypeObject stop_event_object_type
@@ -362,6 +368,8 @@ PyObject *gdbpy_frame_stop_reason_string (PyObject *, PyObject *);
 PyObject *gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw);
 PyObject *gdbpy_lookup_global_symbol (PyObject *self, PyObject *args,
 				      PyObject *kw);
+PyObject *gdbpy_lookup_minimal_symbol (PyObject *self, PyObject *args,
+				       PyObject *kw);
 PyObject *gdbpy_newest_frame (PyObject *self, PyObject *args);
 PyObject *gdbpy_selected_frame (PyObject *self, PyObject *args);
 PyObject *gdbpy_block_for_pc (PyObject *self, PyObject *args);
@@ -381,6 +389,7 @@ char *gdbpy_parse_command_name (const char *name,
 				struct cmd_list_element ***base_list,
 				struct cmd_list_element **start_list);
 
+PyObject *section_to_section_object (asection *sym, struct objfile *objf);
 PyObject *symtab_and_line_to_sal_object (struct symtab_and_line sal);
 PyObject *symtab_to_symtab_object (struct symtab *symtab);
 PyObject *symbol_to_symbol_object (struct symbol *sym);
@@ -414,6 +423,7 @@ PyObject *find_inferior_object (int pid);
 PyObject *inferior_to_inferior_object (struct inferior *inferior);
 
 const struct block *block_object_to_block (PyObject *obj);
+asection *section_object_to_section (PyObject *obj);
 struct symbol *symbol_object_to_symbol (PyObject *obj);
 struct value *value_object_to_value (PyObject *self);
 struct value *convert_value_from_python (PyObject *obj);
@@ -435,6 +445,10 @@ int gdbpy_initialize_symtabs (void)
 int gdbpy_initialize_commands (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_symbols (void)
+  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
+int gdbpy_initialize_minsymbols (void)
+  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
+int gdbpy_initialize_sections (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_symtabs (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;

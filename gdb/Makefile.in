@@ -398,11 +398,13 @@ SUBDIR_PYTHON_OBS = \
 	py-infthread.o \
 	py-lazy-string.o \
 	py-linetable.o \
+	py-minsymbol.o \
 	py-newobjfileevent.o \
 	py-objfile.o \
 	py-param.o \
 	py-prettyprint.o \
 	py-progspace.o \
+	py-section.o \
 	py-signalevent.o \
 	py-stopevent.o \
 	py-symbol.o \
@@ -438,11 +440,13 @@ SUBDIR_PYTHON_SRCS = \
 	python/py-infthread.c \
 	python/py-lazy-string.c \
 	python/py-linetable.c \
+	python/py-minsymbol.c \
 	python/py-newobjfileevent.c \
 	python/py-objfile.c \
 	python/py-param.c \
 	python/py-prettyprint.c \
 	python/py-progspace.c \
+	python/py-section.c \
 	python/py-signalevent.c \
 	python/py-stopevent.c \
 	python/py-symbol.c \
@@ -2607,6 +2611,10 @@ py-linetable.o: $(srcdir)/python/py-linetable.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-linetable.c
 	$(POSTCOMPILE)
 
+py-minsymbol.o: $(srcdir)/python/py-minsymbol.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-minsymbol.c
+	$(POSTCOMPILE)
+
 py-newobjfileevent.o: $(srcdir)/python/py-newobjfileevent.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-newobjfileevent.c
 	$(POSTCOMPILE)
@@ -2625,6 +2633,10 @@ py-prettyprint.o: $(srcdir)/python/py-prettyprint.c
 
 py-progspace.o: $(srcdir)/python/py-progspace.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-progspace.c
+	$(POSTCOMPILE)
+
+py-section.o: $(srcdir)/python/py-section.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-section.c
 	$(POSTCOMPILE)
 
 py-signalevent.o: $(srcdir)/python/py-signalevent.c
