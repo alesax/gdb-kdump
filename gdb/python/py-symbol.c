@@ -239,6 +239,28 @@ sympy_is_valid (PyObject *self, PyObject *args)
   Py_RETURN_TRUE;
 }
 
+static PyObject *
+sympy_section (PyObject *self, void *closure)
+{
+  struct symbol *symbol = NULL;
+  PyObject *section_obj;
+  struct obj_section *section;
+
+  SYMPY_REQUIRE_VALID (self, symbol);
+
+  section = SYMBOL_OBJ_SECTION(symbol_objfile(symbol), symbol);
+
+  if (section) {
+    section_obj = section_to_section_object(section->the_bfd_section,
+                                            symbol_objfile(symbol));
+    if (section_obj)
+      return section_obj;
+  }
+
+  Py_INCREF (Py_None);
+  return Py_None;
+}
+
 /* Implementation of gdb.Symbol.value (self[, frame]) -> gdb.Value.  Returns
    the value of the symbol, or an error in various circumstances.  */
 
@@ -378,22 +400,6 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
 
   if (block_obj)
     block = block_object_to_block (block_obj);
-  else
-    {
-      struct frame_info *selected_frame;
-
-      TRY
-	{
-	  selected_frame = get_selected_frame (_("No frame selected."));
-	  block = get_frame_block (selected_frame, NULL);
-	}
-      CATCH (except, RETURN_MASK_ALL)
-	{
-	  GDB_PY_HANDLE_EXCEPTION (except);
-	}
-      END_CATCH
-    }
-
   TRY
     {
       symbol = lookup_symbol (name, block, domain, &is_a_field_of_this);
@@ -403,6 +409,24 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
       GDB_PY_HANDLE_EXCEPTION (except);
     }
   END_CATCH
+
+  if (!block)
+    {
+      struct frame_info *selected_frame;
+
+      TRY
+	{
+	  if (symbol && symbol_read_needs_frame(symbol)) {
+	    selected_frame = get_selected_frame (_("No frame selected."));
+	    block = get_frame_block (selected_frame, NULL);
+	  }
+	}
+      CATCH (except, RETURN_MASK_ALL)
+	{
+	  GDB_PY_HANDLE_EXCEPTION (except);
+	}
+      END_CATCH
+    }
 
   ret_tuple = PyTuple_New (2);
   if (!ret_tuple)
@@ -583,6 +607,8 @@ to display demangled or mangled names.", NULL },
     "True if the symbol requires a frame for evaluation." },
   { "line", sympy_line, NULL,
     "The source line number at which the symbol was defined." },
+  { "section", sympy_section, NULL,
+    "Section of executable where symbol resides." },
   { NULL }  /* Sentinel */
 };
 
