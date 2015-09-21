@@ -55,6 +55,10 @@
 #include "s390-linux-tdep.h"
 #include "kdumpfile.h"
 #include "minsyms.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 
 #include <dirent.h>
 #ifndef O_LARGEFILE
@@ -1507,8 +1511,22 @@ static void init_module_list(const char *p_path, const char *p_suffix)
 			return;
 		}
 		while (! readdir_r(d, &en, &_en) && (_en)) {
+			int type;
+
+			type = en.d_type;
+
 			if (en.d_name[0] == '.') continue;
-			if (en.d_type == DT_DIR) {
+			if (type == DT_UNKNOWN) {
+				char npath[NAME_MAX];
+				struct stat st;
+				snprintf(npath, sizeof(npath)-1, "%s/%s", path, en.d_name);
+				if (stat(npath, &st) == 0) {
+					if (S_ISDIR(st.st_mode)) type = DT_DIR;
+					else if (S_ISREG(st.st_mode)) type = DT_REG;
+				}
+			}
+
+			if (type == DT_DIR) {
 				struct t_directory *ndi = malloc(sizeof(struct t_directory));
 				ndi->_next = rootdir._next;
 				rootdir._next = ndi;
@@ -1516,7 +1534,7 @@ static void init_module_list(const char *p_path, const char *p_suffix)
 				ndi->name = strdup(en.d_name);
 				ndi->parent = di;
 				di->next = ndi;
-			} else if (en.d_type == DT_REG) {
+			} else if (type == DT_REG) {
 				int l = strlen(en.d_name);
 
 				if (l > suffixlen && !strcmp(en.d_name+l-suffixlen, p_suffix)) {
@@ -1528,7 +1546,7 @@ static void init_module_list(const char *p_path, const char *p_suffix)
 					nod->lt = nod->gt = NULL;
 					insertnode(nod, &rootnode);
 				} 
-			}
+			} 
 		}
 		closedir(d);
 		di = di->next;
