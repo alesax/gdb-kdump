@@ -291,6 +291,12 @@ struct {
 		offset *percpu_offsets;
 	} offsets;
 
+	struct {
+		KDUMP_TYPE;
+		offset name;
+		offset list;
+	} kmem_cache;
+
 	struct cpuinfo *cpu;
 	int ncpus;
 } types;
@@ -363,6 +369,21 @@ unsigned long long kt_ptr_value (void *buff)
 	}
 	return val;
 }
+
+char * kt_strndup (offset src, int n);
+char * kt_strndup (offset src, int n)
+{
+	char *dest = NULL;
+	int ret, errno;
+
+	ret = target_read_string(src, &dest, n, &errno);
+
+	if (errno)
+		fprintf(stderr, "target_read_string errno: %d\n", errno);
+
+	return dest;
+}
+
 static offset get_symbol_address(const char *sname);
 static offset get_symbol_address(const char *sname)
 {
@@ -620,6 +641,10 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(module, srcversion);
 		INIT_STRUCT_MEMBER(module, name);
 		INIT_STRUCT_MEMBER(module, module_core);
+
+		INIT_STRUCT(kmem_cache);
+		INIT_STRUCT_MEMBER(kmem_cache, name);
+		INIT_STRUCT_MEMBER_(kmem_cache, next, list);
 		ret = 0;
 	} while(0);
 
@@ -943,6 +968,52 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 	return 0;
 }
 
+static int init_slab(void);
+static int init_slab(void)
+{
+	offset o_slab_caches;
+	offset o_lh, o_kmem_cache;
+	char *lhb, *cache;
+	char *cache_name;
+	offset o_cache_name;
+
+	o_slab_caches = get_symbol_value("slab_caches");
+	if (! o_slab_caches) {
+		o_slab_caches = get_symbol_value("cache_chain");
+		if (!o_slab_caches) {
+			warning(_("Cannot find slab_caches\n"));
+			return -1;
+		}
+	}
+	printf("slab_caches: %llx\n", o_slab_caches);
+
+	lhb = KDUMP_TYPE_ALLOC(list_head);
+	cache = KDUMP_TYPE_ALLOC(kmem_cache);
+
+	KDUMP_TYPE_GET(list_head, o_slab_caches, lhb);
+	list_head_for_each(o_slab_caches, lhb, o_lh) {
+		o_kmem_cache = o_lh - MEMBER_OFFSET(kmem_cache,list);
+		printf("found kmem cache: %llx\n", o_kmem_cache);
+		if (KDUMP_TYPE_GET(kmem_cache, o_kmem_cache, cache)) {
+			fprintf(stderr, "could not type_get\n");
+			continue;
+		}
+		o_cache_name = kt_ptr_value(cache +
+					MEMBER_OFFSET(kmem_cache,name));
+		if (!o_cache_name) {
+			fprintf(stderr, "cache name pointer NULL\n");
+			continue;
+		}
+
+		printf("found kmem cache name: %llx\n", o_cache_name);
+		cache_name = kt_strndup(o_cache_name, 128);
+		printf("cache name is: %s\n", cache_name);
+		free(cache_name);
+	}
+
+	return 0;
+}
+
 static int init_values(void);
 static int init_values(void)
 {
@@ -1043,7 +1114,7 @@ static int init_values(void)
 	if (init_task) free(init_task);
 
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
-	return 0;
+	return init_slab();
 error:
 	if (b) free(b);
 	if (init_task) free(init_task);
