@@ -58,6 +58,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <hashtab.h>
 
 
 #include <dirent.h>
@@ -73,6 +74,7 @@ typedef unsigned long long offset;
 #define F_UNKN_ENDIAN    4
 
 unsigned long long kt_int_value (void *buff);
+unsigned long long kt_long_value (void *buff);
 unsigned long long kt_ptr_value (void *buff);
 
 int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data);
@@ -97,12 +99,17 @@ static void core_close (struct target_ops *self);
 
 typedef unsigned long long offset;
 
+static int nr_node_ids = 1;
+static int nr_cpu_ids = 1;
+
 #define KDUMP_TYPE const char *_name; int _size; int _offset; struct type *_origtype
 #define GET_GDB_TYPE(typ) types. typ ._origtype
 #define GET_TYPE_SIZE(typ) (TYPE_LENGTH(GET_GDB_TYPE(typ)))
 #define MEMBER_OFFSET(type,member) types. type. member
-#define KDUMP_TYPE_ALLOC(type) kdump_type_alloc(GET_GDB_TYPE(type))
-#define KDUMP_TYPE_GET(type,off,where) kdump_type_get(GET_GDB_TYPE(type), off, 0, where)
+#define KDUMP_TYPE_ALLOC(type) kdump_type_alloc(GET_GDB_TYPE(type), 0)
+#define KDUMP_TYPE_ALLOC_EXTRA(type,extra) kdump_type_alloc(GET_GDB_TYPE(type),extra)
+#define KDUMP_TYPE_GET(type,off,where) kdump_type_get(GET_GDB_TYPE(type), off, 0, where, 0)
+#define KDUMP_TYPE_GET_EXTRA(type,off,where,extra) kdump_type_get(GET_GDB_TYPE(type), off, 0, where, extra)
 #define KDUMP_TYPE_FREE(where) free(where)
 #define SYMBOL(var,name) do { var = lookup_symbol(name, NULL, VAR_DOMAIN, NULL); if (! var) { fprintf(stderr, "Cannot lookup_symbol(" name ")\n"); goto error; } } while(0)
 #define OFFSET(x) (types.offsets. x)
@@ -112,12 +119,12 @@ typedef unsigned long long offset;
 #define GET_REGISTER_OFFSET(reg) (MEMBER_OFFSET(user_regs_struct,reg)/GET_TYPE_SIZE(_voidp))
 #define GET_REGISTER_OFFSET_pt(reg) (MEMBER_OFFSET(pt_regs,reg)/GET_TYPE_SIZE(_voidp))
 
-#define list_for_each(pos, head) \
-	for (pos = kt_ptr_value(head); pos != (head); KDUMP_TYPE_GET(_voidp,pos,&pos)
 
-#define list_head_for_each(head,lhb, _nxt) for((_nxt = kt_ptr_value(lhb)), KDUMP_TYPE_GET(list_head, _nxt, lhb);\
-	(_nxt = kt_ptr_value(lhb)) != head; \
-	KDUMP_TYPE_GET(list_head, _nxt, lhb))
+#define list_head_for_each(head, lhb, _nxt)				      \
+	for(KDUMP_TYPE_GET(list_head, head, lhb), _nxt = kt_ptr_value(lhb),   \
+					KDUMP_TYPE_GET(list_head, _nxt, lhb); \
+		_nxt != head;						      \
+		_nxt = kt_ptr_value(lhb), KDUMP_TYPE_GET(list_head, _nxt, lhb))
 
 enum x86_64_regs {
 	reg_RAX = 0,
@@ -181,6 +188,10 @@ struct {
 	struct {
 		KDUMP_TYPE;
 	} _int;
+
+	struct {
+		KDUMP_TYPE;
+	} _long;
 
 	struct {
 		KDUMP_TYPE;
@@ -345,9 +356,53 @@ struct {
 		offset *percpu_offsets;
 	} offsets;
 
+	struct {
+		KDUMP_TYPE;
+		offset flags;
+		offset lru;
+		offset first_page;
+	} page;
+
+	struct {
+		KDUMP_TYPE;
+		offset array;
+		offset name;
+		offset list;
+		offset nodelists;
+		offset num;
+		offset buffer_size;
+	} kmem_cache;
+
+	struct {
+		KDUMP_TYPE;
+		offset slabs_partial;
+		offset slabs_full;
+		offset slabs_free;
+		offset shared;
+		offset alien;
+		offset free_objects;
+	} kmem_list3;
+
+	struct {
+		KDUMP_TYPE;
+		offset avail;
+		offset limit;
+		offset entry;
+	} array_cache;
+
+	struct {
+		KDUMP_TYPE;
+		offset list;
+		offset inuse;
+		offset free;
+		offset s_mem;
+	} slab;
+
 	struct cpuinfo *cpu;
 	int ncpus;
 } types;
+
+unsigned PG_tail, PG_slab;
 
 struct task_info {
 	offset task_struct;
@@ -404,6 +459,21 @@ unsigned long long kt_int_value (void *buff)
 	return val;
 }
 
+unsigned long long kt_long_value (void *buff)
+{
+	unsigned long long val;
+
+	if (GET_TYPE_SIZE(_long) == 4) {
+		val = *(int32_t*)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_32(val);
+	} else {
+		val = *(int64_t*)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_64(val);
+	}
+
+	return val;
+}
+
 unsigned long long kt_ptr_value (void *buff)
 {
 	unsigned long long val;
@@ -417,6 +487,49 @@ unsigned long long kt_ptr_value (void *buff)
 	}
 	return val;
 }
+
+static unsigned long long kt_ptr_value_off (offset addr)
+{
+	char buf[8];
+	unsigned len = GET_TYPE_SIZE(_voidp);
+
+	if (target_read_raw_memory(addr, (void *)buf, len)) {
+		warning(_("Cannot read target memory addr=%llx length=%u\n"),
+								addr, len);
+		return -1;
+	}
+
+	return kt_ptr_value(buf);
+}
+
+static unsigned long long kt_int_value_off (offset addr)
+{
+	char buf[8];
+	unsigned len = GET_TYPE_SIZE(_int);
+
+	if (target_read_raw_memory(addr, (void *)buf, len)) {
+		warning(_("Cannot read target memory addr=%llx length=%u\n"),
+								addr, len);
+		return -1;
+	}
+
+	return kt_int_value(buf);
+}
+
+char * kt_strndup (offset src, int n);
+char * kt_strndup (offset src, int n)
+{
+	char *dest = NULL;
+	int ret, errno;
+
+	ret = target_read_string(src, &dest, n, &errno);
+
+	if (errno)
+		fprintf(stderr, "target_read_string errno: %d\n", errno);
+
+	return dest;
+}
+
 static offset get_symbol_address(const char *sname);
 static offset get_symbol_address(const char *sname)
 {
@@ -519,35 +632,55 @@ static int kdump_type_member_init (struct type *type, const char *name, offset *
 {
 	int i;
 	struct field *f;
+	int ret;
+	enum type_code tcode;
+	offset off;
+
 	f = TYPE_FIELDS(type);
-	for (i = 0; i < TYPE_NFIELDS(type); i ++) {
-		if (! strcmp(f->name, name)) {
-			*poffset = (f->loc.physaddr >> 3);
+	for (i = 0; i < TYPE_NFIELDS(type); i++, f++) {
+		//printf("fieldname \'%s\'\n", f->name);
+		off = (f->loc.physaddr >> 3);
+		if (!strcmp(f->name, name)) {
+			*poffset = off;
 			return 0;
 		}
-		f++;
+		if (strlen(f->name))
+			continue;
+		tcode = TYPE_CODE(f->type);
+		if (tcode == TYPE_CODE_UNION || tcode == TYPE_CODE_STRUCT) {
+			//printf("recursing into unnamed union/struct\n");
+			ret = kdump_type_member_init(f->type, name, poffset);
+			if (ret != -1) {
+				*poffset += off;
+				return ret;
+			}
+		}
 	}
 	return -1;
 }
 
-static void *kdump_type_alloc(struct type *type)
+static void *kdump_type_alloc(struct type *type, size_t extra_size)
 {
 	int allocated = 0;
 	void *buff;
 
 	allocated = 1;
-	buff = malloc(TYPE_LENGTH(type));
+	buff = malloc(TYPE_LENGTH(type) + extra_size);
 	if (buff == NULL) {
-		warning(_("Cannot allocate memory of %d length\n"), (int)TYPE_LENGTH(type));
+		warning(_("Cannot allocate memory of %u length + %lu extra\n"),
+					TYPE_LENGTH(type), extra_size);
 		return NULL;
 	}
 	return buff;
 }
 
-static int kdump_type_get(struct type *type, offset addr, int pos, void *buff)
+static int kdump_type_get(struct type *type, offset addr, int pos, void *buff,
+							size_t extra_size)
 {
-	if (target_read_raw_memory(addr + (TYPE_LENGTH(type)*pos), buff, TYPE_LENGTH(type))) {
-		warning(_("Cannot read target memory of %d length\n"), (int)TYPE_LENGTH(type));
+	if (target_read_raw_memory(addr + (TYPE_LENGTH(type)*pos), buff,
+					TYPE_LENGTH(type) + extra_size)) {
+		warning(_("Cannot read target memory of %u length + %lu extra\n"),
+					TYPE_LENGTH(type), extra_size);
 		return 1;
 	}
 	return 0;
@@ -568,7 +701,8 @@ int kdump_types_init(int flags)
 	#define INIT_BASE_TYPE_(name,tname) if(kdump_type_init(&types. tname ._origtype, &types. tname ._size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
 	#define INIT_REF_TYPE(name) if(kdump_type_init(&types. name ._origtype, &types. name ._size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
 	#define INIT_REF_TYPE_(name,tname) if(kdump_type_init(&types. tname ._origtype, &types. tname ._size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
-	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)) { break; }
+	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)) \
+		{ fprintf(stderr, "Cannot find struct \'%s\' member \'%s\'", #sname, #mname); break; }
 
 	/** initialize member with different name than the containing one */
 	#define INIT_STRUCT_MEMBER_(sname,mname,mmname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mmname)) { break; }
@@ -576,8 +710,9 @@ int kdump_types_init(int flags)
 	/** don't fail if the member is not present */
 	#define INIT_STRUCT_MEMBER__(sname,mname) kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)
 	do {
-		INIT_BASE_TYPE_(int,_int);
-		INIT_REF_TYPE_(void,_voidp);
+		INIT_BASE_TYPE_(int,_int); 
+		INIT_BASE_TYPE_(long,_long);
+		INIT_REF_TYPE_(void,_voidp); 
 
 		INIT_STRUCT(list_head);
 		INIT_STRUCT_MEMBER(list_head,prev);
@@ -728,8 +863,42 @@ int kdump_types_init(int flags)
 			INIT_STRUCT_MEMBER__(ppc_pt_regs, rx6);
 			INIT_STRUCT_MEMBER__(ppc_pt_regs, rx7);
 		}
+		INIT_STRUCT(page);
+		INIT_STRUCT_MEMBER(page, flags);
+		INIT_STRUCT_MEMBER(page, lru);
+		INIT_STRUCT_MEMBER(page, first_page);
+
+		INIT_STRUCT(kmem_cache);
+		INIT_STRUCT_MEMBER(kmem_cache, name);
+		INIT_STRUCT_MEMBER_(kmem_cache, next, list);
+		INIT_STRUCT_MEMBER(kmem_cache, nodelists);
+		INIT_STRUCT_MEMBER(kmem_cache, num);
+		INIT_STRUCT_MEMBER(kmem_cache, array);
+		INIT_STRUCT_MEMBER(kmem_cache, buffer_size);
+
+		INIT_STRUCT(kmem_list3);
+		INIT_STRUCT_MEMBER(kmem_list3, slabs_partial);
+		INIT_STRUCT_MEMBER(kmem_list3, slabs_full);
+		INIT_STRUCT_MEMBER(kmem_list3, slabs_free);
+		INIT_STRUCT_MEMBER(kmem_list3, shared);
+		INIT_STRUCT_MEMBER(kmem_list3, alien);
+		INIT_STRUCT_MEMBER(kmem_list3, free_objects);
+
+		INIT_STRUCT(array_cache);
+		INIT_STRUCT_MEMBER(array_cache, avail);
+		INIT_STRUCT_MEMBER(array_cache, limit);
+		INIT_STRUCT_MEMBER(array_cache, entry);
+
+		INIT_STRUCT(slab);
+		INIT_STRUCT_MEMBER(slab, list);
+		INIT_STRUCT_MEMBER(slab, inuse);
+		INIT_STRUCT_MEMBER(slab, free);
+		INIT_STRUCT_MEMBER(slab, s_mem);
 		ret = 0;
 	} while(0);
+
+	PG_tail = get_symbol_value("PG_tail");
+	PG_slab = get_symbol_value("PG_slab");
 
 	if (ret) {
 		fprintf(stderr, "Cannot init types\n");
@@ -737,6 +906,148 @@ int kdump_types_init(int flags)
 
 	return ret;
 }
+
+struct list_iter {
+	offset curr;
+	offset prev;
+	offset head;
+	offset last;
+	offset fast;
+	int cont;
+	int error;
+};
+
+static void list_first_from(struct list_iter *iter, offset o_head)
+{
+	char b_head[GET_TYPE_SIZE(list_head)];
+
+	iter->fast = 0;
+	iter->error = 0;
+	iter->cont = 1;
+
+	if (KDUMP_TYPE_GET(list_head, o_head, b_head)) {
+		warning(_("Could not read list_head %llx in list_first()\n"),
+								o_head);
+		iter->error = 1;
+		iter->cont = 0;
+		return;
+	}
+
+	iter->curr = o_head;
+	iter->last = kt_ptr_value(b_head + MEMBER_OFFSET(list_head, prev));
+
+	iter->head = o_head;
+	iter->prev = iter->last;
+}
+
+static void list_first(struct list_iter *iter, offset o_head)
+{
+	char b_head[GET_TYPE_SIZE(list_head)];
+
+	iter->fast = 0;
+	iter->error = 0;
+	iter->cont = 1;
+
+	if (KDUMP_TYPE_GET(list_head, o_head, b_head)) {
+		warning(_("Could not read list_head %llx in list_first()\n"),
+								o_head);
+		iter->error = 1;
+		iter->cont = 0;
+		return;
+	}
+
+	iter->curr = kt_ptr_value(b_head + MEMBER_OFFSET(list_head, next));
+	iter->last = kt_ptr_value(b_head + MEMBER_OFFSET(list_head, prev));
+
+	/* Empty list */
+	if (iter->curr == o_head) {
+		if (iter->last != o_head) {
+			warning(_("list_head %llx is empty, but prev points to %llx\n"),
+							o_head,	iter->last);
+			iter->error = 1;
+		}
+		iter->cont = 0;
+		return;
+	}
+
+	iter->head = o_head;
+	iter->prev = o_head;
+}
+
+static void list_next(struct list_iter *iter)
+{
+	char b_head[GET_TYPE_SIZE(list_head)];
+	offset o_next, o_prev;
+
+	if (KDUMP_TYPE_GET(list_head, iter->curr, b_head)) {
+		warning(_("Could not read list_head %llx in list_next()\n"),
+								iter->curr);
+		iter->error = 1;
+		iter->cont = 0;
+		return;
+	}
+
+	o_next = kt_ptr_value(b_head + MEMBER_OFFSET(list_head, next));
+	o_prev = kt_ptr_value(b_head + MEMBER_OFFSET(list_head, prev));
+
+	if (o_next == iter->head) {
+		if (iter->curr != iter->last) {
+			warning(_("list item %llx appears to be last, but list_head %llx ->prev points to %llx\n"),
+						iter->curr, iter->head,
+						iter->last);
+			iter->error = 1;
+		}
+		iter->cont = 0;
+		return;
+	}
+
+	if (o_prev != iter->prev) {
+		warning(_("list item %llx ->next is %llx but the latter's ->prev is %llx\n"),
+					iter->prev, iter->curr, o_prev);
+		iter->error = 1;
+		/*
+		 * broken ->prev link means that there might be cycle that
+		 * does not include head; start detecting cycles
+		 */
+		if (!iter->fast)
+			iter->fast = iter->curr;
+	}
+
+	/*
+	 * Are we detecting cycles? If so, advance iter->fast to
+	 * iter->curr->next->next and compare iter->curr to both next's
+	 * (Floyd's Tortoise and Hare algorithm)
+	 *
+	 */
+	if (iter->fast) {
+		int i = 2;
+		while(i--) {
+			/*
+			 *  Simply ignore failure to read fast->next, the next
+			 *  call to list_next() will find out anyway.
+			 */
+			if (KDUMP_TYPE_GET(list_head, iter->fast, b_head))
+				break;
+			iter->fast = kt_ptr_value(
+				b_head + MEMBER_OFFSET(list_head, next));
+			if (iter->curr == iter->fast) {
+				warning(_("list_next() detected cycle, aborting traversal\n"));
+				iter->error = 1;
+				iter->cont = 0;
+				return;
+			}
+		}
+	}
+
+	iter->prev = iter->curr;
+	iter->curr = o_next;
+}
+
+#define list_for_each(iter, o_head) \
+	for (list_first(&(iter), o_head); (iter).cont; list_next(&(iter)))
+
+#define list_for_each_from(iter, o_head) \
+	for (list_first_from(&(iter), o_head); (iter).cont; list_next(&(iter)))
 
 int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data)
 {
@@ -995,7 +1306,8 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 			 * FIXME: use the size obtained from debuginfo
 			 */
 			rsp += 0x148;
-			target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6);
+			if (target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6))
+				warning(_("Could not read regs\n"));
 
 			regcache_raw_supply(rc, 15, &regs[5]);
 			regcache_raw_supply(rc, 14, &regs[4]);
@@ -1026,7 +1338,6 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 			REG(reg_RSP,sp);
 			task_info->sp = reg;
 			REG(reg_RIP,ip);
-			printf ("task %p cpu %02d rip = %p\n", (void*)task_info->task_struct, cpu, reg);
 			task_info->ip = reg;
 			REG(reg_RAX,ax);
 			REG(reg_RCX,cx);
@@ -1092,13 +1403,860 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 	return 0;
 }
 
+struct list_head {
+	offset next;
+	offset prev;
+};
+
+struct page {
+	unsigned long flags;
+	struct list_head lru;
+	offset first_page;
+	int valid;
+};
+
+enum slab_type {
+	slab_partial,
+	slab_full,
+	slab_free
+};
+
+static const char *slab_type_names[] = {
+	"partial",
+	"full",
+	"free"
+};
+
+enum ac_type {
+	ac_percpu,
+	ac_shared,
+	ac_alien
+};
+
+static const char *ac_type_names[] = {
+	"percpu",
+	"shared",
+	"alien"
+};
+
+typedef unsigned int kmem_bufctl_t;
+#define BUFCTL_END      (((kmem_bufctl_t)(~0U))-0)
+#define BUFCTL_FREE     (((kmem_bufctl_t)(~0U))-1)
+#define BUFCTL_ACTIVE   (((kmem_bufctl_t)(~0U))-2)
+#define SLAB_LIMIT      (((kmem_bufctl_t)(~0U))-3)
+
+
+struct kmem_cache {
+	offset o_cache;
+	const char *name;
+	unsigned int num;
+	htab_t obj_ac;
+	unsigned int buffer_size;
+	int array_caches_inited;
+	int broken;
+};
+
+struct kmem_slab {
+	offset o_slab;
+	kmem_bufctl_t free;
+	unsigned int inuse;
+	offset s_mem;
+	kmem_bufctl_t *bufctl;
+};
+
+/* Cache of kmem_cache structs indexed by offset */
+static htab_t kmem_cache_cache;
+
+/* List_head of all kmem_caches */
+offset o_slab_caches;
+
+/* Just get the least significant bits of the offset */
+static hashval_t kmem_cache_hash(const void *p)
+{
+	return ((struct kmem_cache*)p)->o_cache;
+}
+
+static int kmem_cache_eq(const void *cache, const void *off)
+{
+	return (((struct kmem_cache*)cache)->o_cache == *(offset *)off);
+}
+
+struct kmem_ac {
+	offset offset;
+	enum ac_type type;
+	/* At which node cache resides (-1 for percpu) */
+	int at_node;
+	/* For which node or cpu the cache is (-1 for shared) */
+	int for_node_cpu;
+};
+
+/* A mapping between object's offset and array_cache */
+struct kmem_obj_ac {
+	offset obj;
+	struct kmem_ac *ac;
+};
+
+static hashval_t kmem_ac_hash(const void *p)
+{
+	return ((struct kmem_obj_ac*)p)->obj;
+}
+
+static int kmem_ac_eq(const void *obj, const void *off)
+{
+	return (((struct kmem_obj_ac*)obj)->obj == *(offset *)off);
+}
+
+//FIXME: support the CONFIG_PAGEFLAGS_EXTENDED variant?
+#define PageTail(page)	(page.flags & 1UL << PG_tail)
+#define PageSlab(page)	(page.flags & 1UL << PG_slab)
+
+//TODO: get this via libkdumpfile somehow?
+#define VMEMMAP_START	0xffffea0000000000UL
+#define PAGE_SHIFT	12
+
+static unsigned long long memmap = VMEMMAP_START;
+
+static offset pfn_to_page_memmap(unsigned long pfn)
+{
+	return memmap + pfn*GET_TYPE_SIZE(page);
+}
+
+//TODO: once the config querying below works, support all variants
+#define pfn_to_page(pfn) pfn_to_page_memmap(pfn)
+
+static kdump_paddr_t transform_memory(kdump_paddr_t addr);
+
+static unsigned long addr_to_pfn(offset addr)
+{
+	kdump_paddr_t pa = transform_memory(addr);
+
+	return pa >> PAGE_SHIFT;
+}
+
+#define virt_to_opage(addr)	pfn_to_page(addr_to_pfn(addr))
+static int check_slab_obj(offset obj);
+static int init_kmem_caches(void);
+static struct page virt_to_head_page(offset addr);
+
+
+//TODO: have some hashtable-based cache as well?
+static struct kmem_slab *
+init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
+{
+	char b_slab[GET_TYPE_SIZE(slab)];
+	struct kmem_slab *slab;
+	offset o_bufctl = o_slab + GET_TYPE_SIZE(slab);
+	size_t bufctl_size = cachep->num * sizeof(kmem_bufctl_t);
+	//FIXME: use target's kmem_bufctl_t typedef, which didn't work in
+	//INIT_BASE_TYPE though
+	size_t bufctl_size_target = cachep->num * GET_TYPE_SIZE(_int);
+	char b_bufctl[bufctl_size_target];
+	int i;
+
+	if (KDUMP_TYPE_GET(slab, o_slab, b_slab)) {
+		warning(_("error reading struct slab %llx of cache %s\n"),
+							o_slab, cachep->name);
+		return NULL;
+	}
+
+	slab = malloc(sizeof(struct kmem_slab));
+
+	slab->o_slab = o_slab;
+	slab->inuse = kt_int_value(b_slab + MEMBER_OFFSET(slab, inuse));
+	slab->free = kt_int_value(b_slab + MEMBER_OFFSET(slab, free));
+	slab->s_mem = kt_ptr_value(b_slab + MEMBER_OFFSET(slab, s_mem));
+
+	slab->bufctl = malloc(bufctl_size);
+	if (target_read_raw_memory(o_bufctl, (void *) b_bufctl,
+				bufctl_size_target)) {
+		warning(_("error reading bufctl %llx of slab %llx of cache %s\n"),
+						o_bufctl, o_slab, cachep->name);
+		for (i = 0; i < cachep->num; i++)
+			slab->bufctl[i] = BUFCTL_END;
+
+		return slab;
+	}
+
+	for (i = 0; i < cachep->num; i++)
+		slab->bufctl[i] = kt_int_value(b_bufctl + i*GET_TYPE_SIZE(_int));
+
+	return slab;
+}
+
+static void free_kmem_slab(struct kmem_slab *slab)
+{
+	free(slab->bufctl);
+	free(slab);
+}
+
+static unsigned int
+check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
+							enum slab_type type)
+{
+	unsigned int counted_free = 0;
+	kmem_bufctl_t i;
+	offset o_slab = slab->o_slab;
+	offset o_obj, o_prev_obj = 0;
+	struct page page;
+	offset o_page_cache, o_page_slab;
+
+	i = slab->free;
+	while (i != BUFCTL_END) {
+		counted_free++;
+
+		if (counted_free > cachep->num) {
+			printf("free bufctl cycle detected in slab %llx\n", o_slab);
+			break;
+		}
+		if (i > cachep->num) {
+			printf("bufctl value overflow (%d) in slab %llx\n", i, o_slab);
+			break;
+		}
+
+		i = slab->bufctl[i];
+	}
+
+//	printf("slab inuse=%d cnt_free=%d num=%d\n", slab->inuse, counted_free,
+//								cachep->num);
+
+	if (slab->inuse + counted_free != cachep->num)
+		 printf("slab %llx #objs mismatch: inuse=%d + cnt_free=%d != num=%d\n",
+				o_slab, slab->inuse, counted_free, cachep->num);
+
+	switch (type) {
+	case slab_partial:
+		if (!slab->inuse)
+			printf("slab %llx has zero inuse but is on slabs_partial\n", o_slab);
+		else if (slab->inuse == cachep->num)
+			printf("slab %llx is full (%d) but is on slabs_partial\n", o_slab, slab->inuse);
+		break;
+	case slab_full:
+		if (!slab->inuse)
+			printf("slab %llx has zero inuse but is on slabs_full\n", o_slab);
+		else if (slab->inuse < cachep->num)
+			printf("slab %llx has %d/%d inuse but is on slabs_full\n", o_slab, slab->inuse, cachep->num);
+		break;
+	case slab_free:
+		if (slab->inuse)
+			printf("slab %llx has %d/%d inuse but is on slabs_empty\n", o_slab, slab->inuse, cachep->num);
+		break;
+	default:
+		exit(1);
+	}
+
+	for (i = 0; i < cachep->num; i++) {
+		o_obj = slab->s_mem + i * cachep->buffer_size;
+		if (o_prev_obj >> PAGE_SHIFT == o_obj >> PAGE_SHIFT)
+			continue;
+
+		o_prev_obj = o_obj;
+		page = virt_to_head_page(o_obj);
+		if (!page.valid) {
+			warning(_("slab %llx object %llx could not read struct page\n"),
+					o_slab, o_obj);
+			continue;
+		}
+		if (!PageSlab(page))
+			warning(_("slab %llx object %llx is not on PageSlab page\n"),
+					o_slab, o_obj);
+		o_page_cache = page.lru.next;
+		o_page_slab = page.lru.prev;
+
+		if (o_page_cache != cachep->o_cache)
+			warning(_("cache %llx (%s) object %llx is on page where lru.next points to %llx and not the cache\n"),
+					cachep->o_cache, cachep->name, o_obj,
+					o_page_cache);
+		if (o_page_slab != o_slab)
+			warning(_("slab %llx object %llx is on page where lru.prev points to %llx and not the slab\n"),
+					o_slab, o_obj, o_page_slab);
+	}
+
+	return counted_free;
+}
+
+static unsigned long
+check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
+							enum slab_type type)
+{
+	struct list_iter iter;
+	offset o_slab;
+	struct kmem_slab *slab;
+	unsigned long counted_free = 0;
+
+//	printf("checking slab list %llx type %s\n", o_slabs,
+//							slab_type_names[type]);
+
+	list_for_each(iter, o_slabs) {
+		o_slab = iter.curr - MEMBER_OFFSET(slab, list);
+//		printf("found slab: %llx\n", o_slab);
+		slab = init_kmem_slab(cachep, o_slab);
+		if (!slab)
+			continue;
+
+		counted_free += check_kmem_slab(cachep, slab, type);
+		free_kmem_slab(slab);
+	}
+
+	return counted_free;
+}
+
+/* Check that o_obj points to an object on slab of kmem_cache */
+static void check_kmem_obj(struct kmem_cache *cachep, offset o_obj)
+{
+	struct page page;
+	offset o_cache, o_slab;
+	offset obj_base;
+	unsigned int idx;
+	struct kmem_slab *slabp;
+
+	page = virt_to_head_page(o_obj);
+
+	if (!PageSlab(page))
+		warning(_("object %llx is not on PageSlab page\n"), o_obj);
+
+	o_cache = page.lru.next;
+	if (o_cache != cachep->o_cache)
+		warning(_("object %llx is on page that should belong to cache "
+				"%llx (%s), but lru.next points to %llx\n"),
+				o_obj, cachep->o_cache, cachep->name, o_obj);
+
+	o_slab = page.lru.prev;
+	slabp = init_kmem_slab(cachep, o_slab);
+
+	//TODO: check also that slabp is in appropriate lists? could be quite slow...
+	if (!slabp)
+		return;
+
+	//TODO: kernel implementation uses reciprocal_divide, check?
+	idx = (o_obj - slabp->s_mem) / cachep->buffer_size;
+	obj_base = slabp->s_mem + idx * cachep->buffer_size;
+
+	if (obj_base != o_obj)
+		warning(_("pointer %llx should point to beginning of object "
+				"but object's address is %llx\n"), o_obj,
+				obj_base);
+
+	if (idx >= cachep->num)
+		warning(_("object %llx has index %u, but there should be only "
+				"%u objects on slabs of cache %llx"),
+				o_obj, idx, cachep->num, cachep->o_cache);
+}
+
+static void init_kmem_array_cache(struct kmem_cache *cachep,
+		offset o_array_cache, char *b_array_cache, enum ac_type type,
+		int id1, int id2)
+{
+	unsigned int avail, limit, i;
+	char *b_entries;
+	offset o_entries = o_array_cache + MEMBER_OFFSET(array_cache, entry);
+	offset o_obj;
+	void **slot;
+	struct kmem_ac *ac;
+	struct kmem_obj_ac *obj_ac;
+
+	avail = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, avail));
+	limit = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, limit));
+
+//	printf("found %s[%d,%d] array_cache %llx\n", ac_type_names[type],
+//						id1, id2, o_array_cache);
+//	printf("avail=%u limit=%u entries=%llx\n", avail, limit, o_entries);
+
+	if (avail > limit)
+		printf("array_cache %llx has avail=%d > limit=%d\n",
+						o_array_cache, avail, limit);
+
+	if (!avail)
+		return;
+
+	ac = malloc(sizeof(struct kmem_ac));
+	ac->offset = o_array_cache;
+	ac->type = type;
+	ac->at_node = id1;
+	ac->for_node_cpu = id2;
+
+	b_entries = malloc(avail * GET_TYPE_SIZE(_voidp));
+
+	if (target_read_raw_memory(o_entries, (void *)b_entries,
+					avail *	GET_TYPE_SIZE(_voidp))) {
+		warning(_("could not read entries of array_cache %llx of cache %s\n"),
+						o_array_cache, cachep->name);
+		goto done;
+	}
+
+	for (i = 0; i < avail; i++) {
+		o_obj = kt_ptr_value(b_entries + i * GET_TYPE_SIZE(_voidp));
+		//printf("cached obj: %llx\n", o_obj);
+
+		slot = htab_find_slot_with_hash(cachep->obj_ac, &o_obj, o_obj,
+								INSERT);
+
+		if (*slot)
+			printf("obj %llx already in array_cache!\n", o_obj);
+
+		obj_ac = malloc(sizeof(struct kmem_obj_ac));
+		obj_ac->obj = o_obj;
+		obj_ac->ac = ac;
+
+		*slot = obj_ac;
+
+		check_kmem_obj(cachep, o_obj);
+	}
+
+done:
+	free(b_entries);
+}
+
+/* Array of array_caches, such as kmem_cache.array or *kmem_list3.alien */
+static void init_kmem_array_caches(struct kmem_cache *cachep, char * b_caches,
+					int id1, int nr_ids, enum ac_type type)
+{
+	char b_array_cache[GET_TYPE_SIZE(array_cache)];
+	offset o_array_cache;
+	int id;
+
+	for (id = 0; id < nr_ids; id++, b_caches += GET_TYPE_SIZE(_voidp)) {
+		/*
+		 * A node cannot have alien cache on the same node, but some
+		 * kernels (-xen) apparently don't have the corresponding
+		 * array_cache pointer NULL, so skip it now.
+		 */
+		if (type == ac_alien && id1 == id)
+			continue;
+		o_array_cache = kt_ptr_value(b_caches);
+		if (!o_array_cache)
+			continue;
+		if (KDUMP_TYPE_GET(array_cache, o_array_cache, b_array_cache)) {
+			warning(_("could not read array_cache %llx of cache %s type %s id1=%d id2=%d\n"),
+					o_array_cache, cachep->name,
+					ac_type_names[type], id1,
+					type == ac_shared ? -1 : id);
+			continue;
+		}
+		init_kmem_array_cache(cachep, o_array_cache, b_array_cache,
+			type, id1, type == ac_shared ? -1 : id);
+	}
+}
+
+static void init_kmem_list3_arrays(struct kmem_cache *cachep, offset o_list3,
+								int nid)
+{
+	char b_list3[GET_TYPE_SIZE(kmem_list3)];
+	char *b_shared_caches;
+	offset o_alien_caches;
+	char b_alien_caches[nr_node_ids * GET_TYPE_SIZE(_voidp)];
+
+	if (KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3)) {
+                warning(_("error reading kmem_list3 %llx of nid %d of kmem_cache %llx name %s\n"),
+				o_list3, nid, cachep->o_cache, cachep->name);
+		return;
+	}
+
+	/* This is a single pointer, but treat it as array to reuse code */
+	b_shared_caches = b_list3 + MEMBER_OFFSET(kmem_list3, shared);
+	init_kmem_array_caches(cachep, b_shared_caches, nid, 1, ac_shared);
+
+	o_alien_caches = kt_ptr_value(b_list3 + 
+					MEMBER_OFFSET(kmem_list3, alien));
+
+	//TODO: check that this only happens for single-node systems?
+	if (!o_alien_caches)
+		return;
+
+	if (target_read_raw_memory(o_alien_caches, (void *)b_alien_caches,
+					nr_node_ids * GET_TYPE_SIZE(_voidp))) {
+		warning(_("could not read alien array %llx of kmem_list3 %llx of nid %d of cache %s\n"),
+				o_alien_caches, o_list3, nid, cachep->name);
+	}
+
+
+	init_kmem_array_caches(cachep, b_alien_caches, nid, nr_node_ids,
+								ac_alien);
+}
+
+static void check_kmem_list3_slabs(struct kmem_cache *cachep,
+						offset o_list3,	int nid)
+{
+	char b_list3[GET_TYPE_SIZE(kmem_list3)];
+	offset o_lhb;
+	unsigned long counted_free = 0;
+	unsigned long free_objects;
+
+	if(KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3)) {
+                warning(_("error reading kmem_list3 %llx of nid %d of kmem_cache %llx name %s\n"),
+				o_list3, nid, cachep->o_cache, cachep->name);
+		return;
+	}
+
+	free_objects = kt_long_value(b_list3 + MEMBER_OFFSET(kmem_list3,
+							free_objects));
+
+	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_partial);
+	counted_free += check_kmem_slabs(cachep, o_lhb, slab_partial);
+
+	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_full);
+	counted_free += check_kmem_slabs(cachep, o_lhb, slab_full);
+
+	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
+	counted_free += check_kmem_slabs(cachep, o_lhb, slab_free);
+
+//	printf("free=%lu counted=%lu\n", free_objects, counted_free);
+	if (free_objects != counted_free)
+		warning(_("cache %s should have %lu free objects but we counted %lu\n"),
+				cachep->name, free_objects, counted_free);
+}
+
+static struct kmem_cache *init_kmem_cache(offset o_cache)
+{
+	struct kmem_cache *cache;
+	char b_cache[GET_TYPE_SIZE(kmem_cache)];
+	offset o_cache_name;
+	void **slot;
+
+	if (!kmem_cache_cache)
+		init_kmem_caches();
+
+	slot = htab_find_slot_with_hash(kmem_cache_cache, &o_cache, o_cache,
+								INSERT);
+	if (*slot) {
+		cache = (struct kmem_cache*) *slot;
+//		printf("kmem_cache %s found in hashtab!\n", cache->name);
+		return cache;
+	}
+
+//	printf("kmem_cache %llx not found in hashtab, inserting\n", o_cache);
+
+	cache = malloc(sizeof(struct kmem_cache));
+	cache->o_cache = o_cache;
+
+	if (KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache)) {
+		warning(_("error reading contents of kmem_cache at %llx\n"),
+								o_cache);
+		cache->broken = 1;
+		cache->name = "(broken)";
+		goto done;
+	}
+
+	cache->num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
+	cache->buffer_size = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache,
+								buffer_size));
+	cache->array_caches_inited = 0;
+
+	o_cache_name = kt_ptr_value(b_cache + MEMBER_OFFSET(kmem_cache,name));
+	if (!o_cache_name) {
+		fprintf(stderr, "cache name pointer NULL\n");
+		cache->name = "(null)";
+	}
+
+	cache->name = kt_strndup(o_cache_name, 128);
+	cache->broken = 0;
+//	printf("cache name is: %s\n", cache->name);
+
+done:
+	*slot = cache;
+	return cache;
+}
+
+static void init_kmem_cache_arrays(struct kmem_cache *cache)
+{
+	char b_cache[GET_TYPE_SIZE(kmem_cache)];
+	char *b_nodelists, *b_array_caches;
+	offset o_nodelist, o_array_cache;
+	char *nodelist, *array_cache;
+	int node;
+
+	if (cache->array_caches_inited || cache->broken)
+		return;
+
+	if (KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache)) {
+		warning(_("error reading contents of kmem_cache at %llx\n"),
+							cache->o_cache);
+		return;
+	}
+
+
+	cache->obj_ac = htab_create_alloc(64, kmem_ac_hash, kmem_ac_eq,
+						NULL, xcalloc, xfree);
+
+	b_nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
+	for (node = 0; node < nr_node_ids;
+			node++, b_nodelists += GET_TYPE_SIZE(_voidp)) {
+		o_nodelist = kt_ptr_value(b_nodelists);
+		if (!o_nodelist)
+			continue;
+//		printf("found nodelist[%d] %llx\n", node, o_nodelist);
+		init_kmem_list3_arrays(cache, o_nodelist, node);
+	}
+
+	b_array_caches = b_cache + MEMBER_OFFSET(kmem_cache, array);
+	init_kmem_array_caches(cache, b_array_caches, -1, nr_cpu_ids,
+								ac_percpu);
+
+	cache->array_caches_inited = 1;
+}
+
+static void check_kmem_cache(struct kmem_cache *cache)
+{
+	char b_cache[GET_TYPE_SIZE(kmem_cache)];
+	char *b_nodelists, *b_array_caches;
+	offset o_nodelist, o_array_cache;
+	char *nodelist, *array_cache;
+	int node;
+
+	init_kmem_cache_arrays(cache);
+
+	if (KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache)) {
+		warning(_("error reading contents of kmem_cache at %llx\n"),
+							cache->o_cache);
+		return;
+	}
+
+	b_nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
+	for (node = 0; node < nr_node_ids;
+			node++, b_nodelists += GET_TYPE_SIZE(_voidp)) {
+		o_nodelist = kt_ptr_value(b_nodelists);
+		if (!o_nodelist)
+			continue;
+//		printf("found nodelist[%d] %llx\n", node, o_nodelist);
+		check_kmem_list3_slabs(cache, o_nodelist, node);
+	}
+}
+
+static int init_kmem_caches(void)
+{
+	offset o_kmem_cache;
+	struct list_iter iter;
+	offset o_nr_node_ids, o_nr_cpu_ids;
+
+	kmem_cache_cache = htab_create_alloc(64, kmem_cache_hash,
+					kmem_cache_eq, NULL, xcalloc, xfree);
+
+	o_slab_caches = get_symbol_value("slab_caches");
+	if (! o_slab_caches) {
+		o_slab_caches = get_symbol_value("cache_chain");
+		if (!o_slab_caches) {
+			warning(_("Cannot find slab_caches\n"));
+			return -1;
+		}
+	}
+	printf("slab_caches: %llx\n", o_slab_caches);
+
+	o_nr_cpu_ids = get_symbol_value("nr_cpu_ids");
+	if (! o_nr_cpu_ids) {
+		warning(_("nr_cpu_ids not found, assuming 1 for !SMP"));
+	} else {
+		printf("o_nr_cpu_ids = %llx\n", o_nr_cpu_ids);
+		nr_cpu_ids = kt_int_value_off(o_nr_cpu_ids);
+		printf("nr_cpu_ids = %d\n", nr_cpu_ids);
+	}
+
+	o_nr_node_ids = get_symbol_value("nr_node_ids");
+	if (! o_nr_node_ids) {
+		warning(_("nr_node_ids not found, assuming 1 for !NUMA"));
+	} else {
+		printf("o_nr_node_ids = %llx\n", o_nr_node_ids);
+		nr_node_ids = kt_int_value_off(o_nr_node_ids);
+		printf("nr_node_ids = %d\n", nr_node_ids);
+	}
+
+	list_for_each(iter, o_slab_caches) {
+		o_kmem_cache = iter.curr - MEMBER_OFFSET(kmem_cache,list);
+//		printf("found kmem cache: %llx\n", o_kmem_cache);
+
+		init_kmem_cache(o_kmem_cache);
+	}
+
+	return 0;
+}
+
+static void check_kmem_caches(void)
+{
+	offset o_lhb, o_kmem_cache;
+	struct list_iter iter;
+	struct kmem_cache *cache;
+
+	if (!kmem_cache_cache)
+		init_kmem_caches();
+
+	list_for_each(iter, o_slab_caches) {
+		o_kmem_cache = iter.curr - MEMBER_OFFSET(kmem_cache,list);
+
+		cache = init_kmem_cache(o_kmem_cache);
+		printf("checking kmem cache %llx name %s\n", o_kmem_cache,
+				cache->name);
+		if (cache->broken) {
+			printf("cache is too broken, skipping");
+			continue;
+		}
+		check_kmem_cache(cache);
+	}
+}
+
+
+
+
+static struct page read_page(offset o_page)
+{
+	char b_page[GET_TYPE_SIZE(page)];
+	struct page page;
+
+	if (KDUMP_TYPE_GET(page, o_page, b_page)) {
+		page.valid = 0;
+		return page;
+	}
+
+	page.flags = kt_long_value(b_page + MEMBER_OFFSET(page, flags));
+	page.lru.next = kt_ptr_value(b_page + MEMBER_OFFSET(page, lru)
+					+ MEMBER_OFFSET(list_head, next));
+	page.lru.prev = kt_ptr_value(b_page + MEMBER_OFFSET(page, lru)
+					+ MEMBER_OFFSET(list_head, prev));
+	page.first_page = kt_ptr_value(b_page +
+					MEMBER_OFFSET(page, first_page));
+	page.valid = 1;
+
+	return page;
+}
+
+static inline struct page compound_head(struct page page)
+{
+	if (page.valid && PageTail(page))
+		return read_page(page.first_page);
+	return page;
+}
+
+static struct page virt_to_head_page(offset addr)
+{
+	struct page page;
+
+	page = read_page(virt_to_opage(addr));
+
+	return compound_head(page);
+}
+
+static int check_slab_obj(offset obj)
+{
+	struct page page;
+	offset o_cache, o_slab;
+	struct kmem_cache *cachep;
+	struct kmem_slab *slabp;
+	struct kmem_obj_ac *obj_ac;
+	struct kmem_ac *ac;
+	unsigned int idx;
+	offset obj_base;
+	unsigned int i, cnt = 0;
+	int free = 0;
+
+	page = virt_to_head_page(obj);
+
+	if (!page.valid) {
+		warning(_("unable to read struct page for object at %llx\n"),
+				obj);
+		return 0;
+	}
+
+	if (!PageSlab(page))
+		return 0;
+
+	o_cache = page.lru.next;
+	o_slab = page.lru.prev;
+	printf("pointer %llx is on slab %llx of cache %llx\n", obj, o_slab,
+								o_cache);
+
+	cachep = init_kmem_cache(o_cache);
+	init_kmem_cache_arrays(cachep);
+	slabp = init_kmem_slab(cachep, o_slab);
+
+	//TODO: kernel implementation uses reciprocal_divide, check?
+	idx = (obj - slabp->s_mem) / cachep->buffer_size;
+	obj_base = slabp->s_mem + idx * cachep->buffer_size;
+
+	printf("pointer is to object %llx with index %u\n", obj_base, idx);
+
+	i = slabp->free;
+	while (i != BUFCTL_END) {
+		cnt++;
+
+		if (cnt > cachep->num) {
+			printf("free bufctl cycle detected in slab %llx\n", o_slab);
+			break;
+		}
+		if (i > cachep->num) {
+			printf("bufctl value overflow (%d) in slab %llx\n", i, o_slab);
+			break;
+		}
+
+		if (i == idx)
+			free = 1;
+
+		i = slabp->bufctl[i];
+	}
+
+	printf("object is %s\n", free ? "free" : "allocated");
+
+	obj_ac = htab_find_with_hash(cachep->obj_ac, &obj, obj);
+
+	if (obj_ac) {
+		ac = obj_ac->ac;
+		printf("object is in array_cache %llx type %s[%d,%d]\n",
+			ac->offset, ac_type_names[ac->type], ac->at_node,
+			ac->for_node_cpu);
+	}
+
+	free_kmem_slab(slabp);
+
+	return 1;
+}
+
+static int init_memmap(void)
+{
+	const char *cfg;
+	offset o_mem_map;
+	offset o_page;
+	struct page page;
+	unsigned long long p_memmap;
+
+	//FIXME: why are all NULL?
+
+	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_FLATMEM");
+	printf("CONFIG_FLATMEM=%s\n", cfg ? cfg : "(null)");
+
+	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_DISCONTIGMEM");
+	printf("CONFIG_DISCONTIGMEM=%s\n", cfg ? cfg : "(null)");
+
+	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_SPARSEMEM_VMEMMAP");
+	printf("CONFIG_SPARSEMEM_VMEMMAP=%s\n", cfg ? cfg : "(null)");
+
+	o_mem_map = get_symbol_value("mem_map");
+	printf("memmap: %llx\n", o_mem_map);
+
+	if (o_mem_map) {
+		p_memmap = kt_ptr_value_off(o_mem_map);
+		printf("memmap is pointer to: %llx\n", p_memmap);
+		if (p_memmap != -1)
+			memmap = p_memmap;
+	}
+
+/*
+	o_page = virt_to_opage(0xffff880138bedf40UL);
+	printf("ffff880138bedf40 is page %llx\n", o_page);
+
+	page = read_page(o_page);
+	printf("flags=%lx lru=(%llx,%llx) first_page=%llx\n",page.flags,
+			page.lru.next, page.lru.prev, page.first_page);
+	printf("PG_slab=%llx\n", get_symbol_value("PG_slab"));
+	printf("PageSlab(page)==%d\n", PageSlab(page));
+*/
+	return 0;
+}
+
 static int init_values(void);
 static int init_values(void)
 {
 	struct symbol *s;
 	char *b = NULL, *init_task = NULL, *task = NULL;
-	offset off, off_task, rsp, rip, _rsp;
+	offset off, o_task, rsp, rip, _rsp;
 	offset tasks;
+	offset o_tasks;
+	offset off_task;
 	offset stack;
 	offset o_init_task;
 	int state;
@@ -1108,6 +2266,7 @@ static int init_values(void)
 	int cnt = 0;
 	int pid_reserve;
 	struct task_info *task_info;
+	struct list_iter iter;
 
 	s = NULL;
 	
@@ -1141,58 +2300,59 @@ static int init_values(void)
 		goto error;
 	task = KDUMP_TYPE_ALLOC(task_struct);
 	if (!task) goto error;
+
 	if (KDUMP_TYPE_GET(task_struct, o_init_task, init_task))
 		goto error;
 	tasks = kt_ptr_value(init_task + MEMBER_OFFSET(task_struct,tasks));
+	o_tasks = o_init_task + MEMBER_OFFSET(task_struct, tasks);
 
 	i = 0;
-	off = 0;
 	pid_reserve = 50000;
 
 	print_thread_events = 0;
 	in = current_inferior();
 	inferior_appeared (in, 1);
 
-	list_head_for_each(tasks, init_task + MEMBER_OFFSET(task_struct,tasks), off) {
-		
+	list_for_each_from(iter, o_tasks) {
+
 		struct thread_info *info;
 		int pid;
 		ptid_t tt;
 		struct regcache *rc;
 		long long val;
 		offset main_tasks, mt;
-		
+		struct list_iter iter_thr;
+		offset o_threads;
 
 		//fprintf(stderr, __FILE__":%d: ok\n", __LINE__);
 		off_task = off - MEMBER_OFFSET(task_struct,tasks);
 		if (KDUMP_TYPE_GET(task_struct, off_task, task)) continue;
 
-		main_tasks = off_task;//kt_ptr_value(task + MEMBER_OFFSET(task_struct,thread_group));
+		o_task = iter.curr - MEMBER_OFFSET(task_struct, tasks);
+		o_threads = o_task + MEMBER_OFFSET(task_struct, thread_group);
+		list_for_each_from(iter_thr, o_threads) {
 
-		do {
-		//list_head_for_each(main_tasks, task + MEMBER_OFFSET(task_struct,thread_group), mt) {
-
-			//off_task = mt - MEMBER_OFFSET(task_struct,thread_group);
-			if (KDUMP_TYPE_GET(task_struct, off_task, task))  {
+			o_task = iter_thr.curr - MEMBER_OFFSET(task_struct,
+								thread_group);
+			if (KDUMP_TYPE_GET(task_struct, o_task, task))
 				continue;
-			}
 
-			if (add_task(off_task, &pid_reserve, task)) {
-
-			} else {
-				
-				printf_unfiltered(_("Loaded processes: %d\r"), ++cnt);
-			}
-			off_task = kt_ptr_value(task + MEMBER_OFFSET(task_struct, thread_group)) - MEMBER_OFFSET(task_struct, thread_group);
-			if (off_task == main_tasks) break;
-
-		} while (1);
+			if (!add_task(o_task, &pid_reserve, task))
+				printf_unfiltered(_("Loaded processes: %d\r"),
+									++cnt);
+		}
 	}
 
 	if (b) free(b);
 	if (init_task) free(init_task);
 
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
+	init_memmap();
+
+//	check_kmem_caches();
+//	check_slab_obj(0xffff880138bedf40UL);
+//	check_slab_obj(0xffff8801359734c0UL);
+
 	return 0;
 error:
 	if (b) free(b);
@@ -1373,7 +2533,6 @@ core_detach (struct target_ops *ops, const char *args, int from_tty)
 		printf_filtered (_("No core file now.\n"));
 }
 
-static kdump_paddr_t transform_memory(kdump_paddr_t addr);
 static kdump_paddr_t transform_memory(kdump_paddr_t addr)
 {
 	kdump_paddr_t out;
@@ -1396,10 +2555,12 @@ kdump_xfer_partial (struct target_ops *ops, enum target_object object,
 	{
 		case TARGET_OBJECT_MEMORY:
 			offset = transform_memory((kdump_paddr_t)offset);
-			r = kdump_read(dump_ctx, (kdump_paddr_t)offset, (unsigned char*)readbuf, (size_t)len, KDUMP_PHYSADDR);
+			r = kdump_read(dump_ctx, KDUMP_KPHYSADDR, (kdump_paddr_t)offset, (unsigned char*)readbuf, (size_t)len);
 			if (r != len) {
-				error(_("Cannot read %lu bytes from %lx (%lld)!"), (size_t)len, (long unsigned int)offset, (long long)r);
-			} else
+				warning(_("Cannot read %lu bytes from %lx (%lld)!"),
+						(size_t)len, (long unsigned int)offset, (long long)r);
+				return TARGET_XFER_E_IO;
+			} else 
 				*xfered_len = len;
 
 			return TARGET_XFER_OK;
@@ -1797,7 +2958,9 @@ static void kdumpps_command(char *fn, int from_tty)
 		if (!task) continue;
 		if (task->cpu == -1) cpu[0] = '\0';
 		else snprintf(cpu, 5, "% 4d", task->cpu);
+#ifdef _DEBUG
 		printf_filtered(_("% 7d %llx %llx %llx %-4s %s\n"), task->pid, task->task_struct, task->ip, task->sp, cpu, tp->name);
+#endif
 	}
 }
 
