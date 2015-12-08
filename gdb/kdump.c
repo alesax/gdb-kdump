@@ -99,8 +99,10 @@ typedef unsigned long long offset;
 #define NULL_offset 0LL
 #define F_BIG_ENDIAN 1
 #define MEMBER_OFFSET(type,member) types. type. member
-#define KDUMP_TYPE_ALLOC(type) kdump_type_alloc(GET_GDB_TYPE(type))
-#define KDUMP_TYPE_GET(type,off,where) kdump_type_get(GET_GDB_TYPE(type), off, 0, where)
+#define KDUMP_TYPE_ALLOC(type) kdump_type_alloc(GET_GDB_TYPE(type), 0)
+#define KDUMP_TYPE_ALLOC_EXTRA(type,extra) kdump_type_alloc(GET_GDB_TYPE(type),extra)
+#define KDUMP_TYPE_GET(type,off,where) kdump_type_get(GET_GDB_TYPE(type), off, 0, where, 0)
+#define KDUMP_TYPE_GET_EXTRA(type,off,where,extra) kdump_type_get(GET_GDB_TYPE(type), off, 0, where, extra)
 #define KDUMP_TYPE_FREE(where) free(where)
 #define SYMBOL(var,name) do { var = lookup_symbol(name, NULL, VAR_DOMAIN, NULL); if (! var) { fprintf(stderr, "Cannot lookup_symbol(" name ")\n"); goto error; } } while(0)
 #define OFFSET(x) (types.offsets. x)
@@ -296,6 +298,7 @@ struct {
 		offset name;
 		offset list;
 		offset nodelists;
+		offset num;
 	} kmem_cache;
 
 	struct {
@@ -524,24 +527,28 @@ static int kdump_type_member_init (struct type *type, const char *name, offset *
 	return -1;
 }
 
-static void *kdump_type_alloc(struct type *type)
+static void *kdump_type_alloc(struct type *type, size_t extra_size)
 {
 	int allocated = 0;
 	void *buff;
 
 	allocated = 1;
-	buff = malloc(TYPE_LENGTH(type));
+	buff = malloc(TYPE_LENGTH(type) + extra_size);
 	if (buff == NULL) {
-		warning(_("Cannot allocate memory of %d length\n"), (int)TYPE_LENGTH(type));
+		warning(_("Cannot allocate memory of %u length + %lu extra\n"),
+					TYPE_LENGTH(type), extra_size);
 		return NULL;
 	}
 	return buff;
 }
 
-static int kdump_type_get(struct type *type, offset addr, int pos, void *buff)
+static int kdump_type_get(struct type *type, offset addr, int pos, void *buff,
+							size_t extra_size)
 {
-	if (target_read_raw_memory(addr + (TYPE_LENGTH(type)*pos), buff, TYPE_LENGTH(type))) {
-		warning(_("Cannot read target memory of %d length\n"), (int)TYPE_LENGTH(type));
+	if (target_read_raw_memory(addr + (TYPE_LENGTH(type)*pos), buff,
+					TYPE_LENGTH(type) + extra_size)) {
+		warning(_("Cannot read target memory of %u length + %lu extra\n"),
+					TYPE_LENGTH(type), extra_size);
 		return 1;
 	}
 	return 0;
@@ -674,6 +681,7 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(kmem_cache, name);
 		INIT_STRUCT_MEMBER_(kmem_cache, next, list);
 		INIT_STRUCT_MEMBER(kmem_cache, nodelists);
+		INIT_STRUCT_MEMBER(kmem_cache, num);
 
 		INIT_STRUCT(kmem_list3);
 		INIT_STRUCT_MEMBER(kmem_list3, slabs_partial);
@@ -1013,25 +1021,110 @@ enum slab_type {
 	slab_free
 };
 
-static int init_kmem_slabs(offset o_lhb, enum slab_type type);
-static int init_kmem_slabs(offset o_lhb, enum slab_type type)
+static const char * slab_type_names[] = {
+	"partial",
+	"full",
+	"free"
+};
+
+typedef unsigned int kmem_bufctl_t;
+#define BUFCTL_END      (((kmem_bufctl_t)(~0U))-0)
+#define BUFCTL_FREE     (((kmem_bufctl_t)(~0U))-1)
+#define BUFCTL_ACTIVE   (((kmem_bufctl_t)(~0U))-2)
+#define SLAB_LIMIT      (((kmem_bufctl_t)(~0U))-3)
+
+
+struct kmem_cache {
+	unsigned int num;
+};
+
+struct kmem_slab {
+	kmem_bufctl_t free;
+	unsigned int inuse;
+	enum slab_type type;
+};
+
+static int init_kmem_slab(struct kmem_cache *cachep, offset o_slab, char *b_slab, enum slab_type type);
+static int init_kmem_slab(struct kmem_cache *cachep, offset o_slab, char *b_slab, enum slab_type type)
+{
+	struct kmem_slab slab;
+	unsigned int counted_free = 0;
+	char * b_bufctl = b_slab + GET_TYPE_SIZE(slab);
+	kmem_bufctl_t i;
+
+	slab.inuse = kt_int_value(b_slab + MEMBER_OFFSET(slab, inuse));
+	slab.free = kt_int_value(b_slab + MEMBER_OFFSET(slab, free));
+	slab.type = type;
+
+	i = slab.free;
+	while (i != BUFCTL_END) {
+		counted_free++;
+
+		if (counted_free > cachep->num) {
+			printf("free bufctl cycle detected in slab %llx\n", o_slab);
+			break;
+		}
+		if (i > cachep->num) {
+			printf("bufctl value overflow (%d) in slab %llx\n", i, o_slab);
+			break;
+		}
+
+		i = kt_int_value(b_bufctl + i*sizeof(kmem_bufctl_t));
+	}
+
+//	printf("slab inuse=%d cnt_free=%d num=%d\n", slab.inuse, counted_free,
+//								cachep->num);
+
+	if (slab.inuse + counted_free != cachep->num)
+		 printf("slab %llx #objs mismatch: inuse=%d + cnt_free=%d != num=%d\n",
+				o_slab, slab.inuse, counted_free, cachep->num);
+
+	switch (type) {
+	case slab_partial:
+		if (!slab.inuse)
+			printf("slab %llx has zero inuse but is on slabs_partial\n", o_slab);
+		else if (slab.inuse == cachep->num)
+			printf("slab %llx is full (%d) but is on slabs_partial\n", o_slab, slab.inuse);
+		break;
+	case slab_full:
+		if (!slab.inuse)
+			printf("slab %llx has zero inuse but is on slabs_full\n", o_slab);
+		else if (slab.inuse < cachep->num)
+			printf("slab %llx has %d/%d inuse but is on slabs_full\n", o_slab, slab.inuse, cachep->num);
+		break;
+	case slab_free:
+		if (slab.inuse)
+			printf("slab %llx has %d/%d inuse but is on slabs_empty\n", o_slab, slab.inuse, cachep->num);
+		break;
+	default:
+		exit(1);
+	}
+
+	return 0;
+}
+
+static int init_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type);
+static int init_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type)
 {
 	char *lhb, *slab;
 	offset o_lh, o_slab;
+	size_t bufctl_size = cachep->num * sizeof(kmem_bufctl_t);
 
-	printf("enumerating slab list %llx type %d\n", o_lhb, type);
+	printf("enumerating slab list %llx type %s\n", o_lhb,
+							slab_type_names[type]);
 
 	lhb = KDUMP_TYPE_ALLOC(list_head);
-	slab = KDUMP_TYPE_ALLOC(slab);
+	slab = KDUMP_TYPE_ALLOC_EXTRA(slab, bufctl_size);
 
 	KDUMP_TYPE_GET(list_head, o_lhb, lhb);
 	list_head_for_each(o_lhb, lhb, o_lh) {
 		o_slab = o_lh - MEMBER_OFFSET(slab, list);
-		printf("found slab: %llx\n", o_slab);
-		if (KDUMP_TYPE_GET(slab, o_slab, slab)) {
+//		printf("found slab: %llx\n", o_slab);
+		if (KDUMP_TYPE_GET_EXTRA(slab, o_slab, slab, bufctl_size)) {
 			fprintf(stderr, "could not type_get\n");
 			continue;
 		}
+		init_kmem_slab(cachep, o_slab, slab, type);
 	}
 
 	free(lhb);
@@ -1040,36 +1133,38 @@ static int init_kmem_slabs(offset o_lhb, enum slab_type type)
 	return 0;
 }
 
-static int init_kmem_list3(offset o_list3, char *list3);
-static int init_kmem_list3(offset o_list3, char *list3)
+static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3, char *list3);
+static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3, char *list3)
 {
 	offset o_lhb;
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_partial);
-	init_kmem_slabs(o_lhb, slab_partial);
+	init_kmem_slabs(cachep, o_lhb, slab_partial);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_full);
-	init_kmem_slabs(o_lhb, slab_full);
+	init_kmem_slabs(cachep, o_lhb, slab_full);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
-	init_kmem_slabs(o_lhb, slab_free);
+	init_kmem_slabs(cachep, o_lhb, slab_free);
 
 	return 0;
 }
 
-static int init_kmem_cache(char *cache);
-static int init_kmem_cache(char *cache)
+static int init_kmem_cache(char *b_cache);
+static int init_kmem_cache(char *b_cache)
 {
-	char *nodelists = cache + MEMBER_OFFSET(kmem_cache, nodelists);
+	char *nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
 	offset o_nodelist;
 	char *nodelist;
+	struct kmem_cache cache;
 
+	cache.num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
 	nodelist = KDUMP_TYPE_ALLOC(kmem_list3);
 	for (; (o_nodelist = kt_ptr_value(nodelists)) != 0;
 					nodelists += GET_TYPE_SIZE(_voidp)) {
 		printf("found nodelist %llx\n", o_nodelist);
 		KDUMP_TYPE_GET(kmem_list3, o_nodelist, nodelist);
-		init_kmem_list3(o_nodelist, nodelist);
+		init_kmem_list3(&cache, o_nodelist, nodelist);
 	}
 	KDUMP_TYPE_FREE(nodelist);
 
