@@ -295,6 +295,7 @@ struct {
 
 	struct {
 		KDUMP_TYPE;
+		offset array;
 		offset name;
 		offset list;
 		offset nodelists;
@@ -307,6 +308,13 @@ struct {
 		offset slabs_full;
 		offset slabs_free;
 	} kmem_list3;
+
+	struct {
+		KDUMP_TYPE;
+		offset avail;
+		offset limit;
+		offset entry;
+	} array_cache;
 
 	struct {
 		KDUMP_TYPE;
@@ -682,11 +690,17 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER_(kmem_cache, next, list);
 		INIT_STRUCT_MEMBER(kmem_cache, nodelists);
 		INIT_STRUCT_MEMBER(kmem_cache, num);
+		INIT_STRUCT_MEMBER(kmem_cache, array);
 
 		INIT_STRUCT(kmem_list3);
 		INIT_STRUCT_MEMBER(kmem_list3, slabs_partial);
 		INIT_STRUCT_MEMBER(kmem_list3, slabs_full);
 		INIT_STRUCT_MEMBER(kmem_list3, slabs_free);
+
+		INIT_STRUCT(array_cache);
+		INIT_STRUCT_MEMBER(array_cache, avail);
+		INIT_STRUCT_MEMBER(array_cache, limit);
+		INIT_STRUCT_MEMBER(array_cache, entry);
 
 		INIT_STRUCT(slab);
 		INIT_STRUCT_MEMBER(slab, list);
@@ -1150,15 +1164,49 @@ static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3, char *list
 	return 0;
 }
 
+static int init_kmem_array_cache(struct kmem_cache *cachep,
+				offset o_array_cache, char *b_array_cache)
+{
+	unsigned int avail, limit, i;
+	char *b_entries;
+	offset o_entries = o_array_cache + MEMBER_OFFSET(array_cache, entry);
+	offset o_obj;
+
+	avail = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, avail));
+	limit = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, limit));
+
+	printf("avail=%u limit=%u entries=%llx\n", avail, limit, o_entries);
+
+	if (avail > limit)
+		printf("array_cache %llx has avail=%d > limit=%d\n",
+						o_array_cache, avail, limit);
+
+	b_entries = malloc(avail * GET_TYPE_SIZE(_voidp));
+
+	target_read_raw_memory(o_entries, (void *)b_entries,
+						avail *	GET_TYPE_SIZE(_voidp));
+
+	for (i = 0; i < avail; i++) {
+		o_obj = kt_ptr_value(b_entries + i * GET_TYPE_SIZE(_voidp));
+		printf("cached obj: %llx\n", o_obj);
+	}
+
+	free(b_entries);
+
+	return 0;
+}
+
 static int init_kmem_cache(char *b_cache);
 static int init_kmem_cache(char *b_cache)
 {
 	char *nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
-	offset o_nodelist;
-	char *nodelist;
+	char *array_caches = b_cache + MEMBER_OFFSET(kmem_cache, array);
+	offset o_nodelist, o_array_cache;
+	char *nodelist, *array_cache;
 	struct kmem_cache cache;
 
 	cache.num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
+
 	nodelist = KDUMP_TYPE_ALLOC(kmem_list3);
 	for (; (o_nodelist = kt_ptr_value(nodelists)) != 0;
 					nodelists += GET_TYPE_SIZE(_voidp)) {
@@ -1167,6 +1215,15 @@ static int init_kmem_cache(char *b_cache)
 		init_kmem_list3(&cache, o_nodelist, nodelist);
 	}
 	KDUMP_TYPE_FREE(nodelist);
+
+	array_cache = KDUMP_TYPE_ALLOC(array_cache);
+	for (; (o_array_cache = kt_ptr_value(array_caches)) != 0;
+				array_caches += GET_TYPE_SIZE(_voidp)) {
+		printf("found array_cache %llx\n", o_array_cache);
+		KDUMP_TYPE_GET(array_cache, o_array_cache, array_cache);
+		init_kmem_array_cache(&cache, o_array_cache, array_cache);
+	}
+	KDUMP_TYPE_FREE(array_cache);
 
 	return 0;
 }
