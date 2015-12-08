@@ -501,13 +501,25 @@ static int kdump_type_member_init (struct type *type, const char *name, offset *
 {
 	int i;
 	struct field *f;
+	int ret;
+	enum type_code tcode;
+
 	f = TYPE_FIELDS(type);
-	for (i = 0; i < TYPE_NFIELDS(type); i ++) {
-		if (! strcmp(f->name, name)) {
+	for (i = 0; i < TYPE_NFIELDS(type); i++, f++) {
+		//printf("fieldname \'%s\'\n", f->name);
+		if (!strcmp(f->name, name)) {
 			*poffset = (f->loc.physaddr >> 3);
 			return 0;
 		}
-		f++;
+		if (strlen(f->name))
+			continue;
+		tcode = TYPE_CODE(f->type);
+		if (tcode == TYPE_CODE_UNION || tcode == TYPE_CODE_STRUCT) {
+			//printf("recursing into unnamed union/struct\n");
+			ret = kdump_type_member_init(f->type, name, poffset);
+			if (ret != -1)
+				return ret;
+		}
 	}
 	return -1;
 }
@@ -549,7 +561,8 @@ int kdump_types_init(int flags)
 	#define INIT_BASE_TYPE_(name,tname) if(kdump_type_init(&types. tname ._origtype, &types. tname ._size, #name, T_BASE)) { fprintf(stderr, "Cannot base find type \'%s\'", #name); break; }
 	#define INIT_REF_TYPE(name) if(kdump_type_init(&types. name ._origtype, &types. name ._size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
 	#define INIT_REF_TYPE_(name,tname) if(kdump_type_init(&types. tname ._origtype, &types. tname ._size, #name, T_REF)) { fprintf(stderr, "Cannot ref find type \'%s\'", #name); break; }
-	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)) { break; }
+	#define INIT_STRUCT_MEMBER(sname,mname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)) \
+		{ fprintf(stderr, "Cannot find struct \'%s\' member \'%s\'", #sname, #mname); break; }
 
 	/** initialize member with different name than the containing one */
 	#define INIT_STRUCT_MEMBER_(sname,mname,mmname) if(kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mmname)) { break; }
