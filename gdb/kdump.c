@@ -69,6 +69,7 @@ typedef unsigned long long offset;
 #define F_BIG_ENDIAN 1
 
 unsigned long long kt_int_value (void *buff);
+unsigned long long kt_long_value (void *buff);
 unsigned long long kt_ptr_value (void *buff);
 
 int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data);
@@ -184,6 +185,10 @@ struct {
 	struct {
 		KDUMP_TYPE;
 	} _int;
+
+	struct {
+		KDUMP_TYPE;
+	} _long;
 
 	struct {
 		KDUMP_TYPE;
@@ -339,6 +344,8 @@ struct {
 	int ncpus;
 } types;
 
+unsigned PG_tail, PG_slab;
+
 struct task_info {
 	offset task_struct;
 	offset sp;
@@ -384,6 +391,21 @@ unsigned long long kt_int_value (void *buff)
 	unsigned long long val;
 
 	if (GET_TYPE_SIZE(_int) == 4) {
+		val = *(int32_t*)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_32(val);
+	} else {
+		val = *(int64_t*)buff;
+		if (types.flags & F_BIG_ENDIAN) val = __bswap_64(val);
+	}
+
+	return val;
+}
+
+unsigned long long kt_long_value (void *buff)
+{
+	unsigned long long val;
+
+	if (GET_TYPE_SIZE(_long) == 4) {
 		val = *(int32_t*)buff;
 		if (types.flags & F_BIG_ENDIAN) val = __bswap_32(val);
 	} else {
@@ -616,6 +638,7 @@ int kdump_types_init(int flags)
 	#define INIT_STRUCT_MEMBER__(sname,mname) kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)
 	do {
 		INIT_BASE_TYPE_(int,_int); 
+		INIT_BASE_TYPE_(long,_long); 
 		INIT_REF_TYPE_(void,_voidp); 
 
 		INIT_STRUCT(list_head); 
@@ -745,6 +768,9 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(slab, free);
 		ret = 0;
 	} while(0);
+
+	PG_tail = get_symbol_value("PG_tail");
+	PG_slab = get_symbol_value("PG_slab");
 
 	if (ret) {
 		fprintf(stderr, "Cannot init types\n");
@@ -1066,6 +1092,17 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 	return 0;
 }
 
+struct list_head {
+	offset next;
+	offset prev;
+};
+
+struct page {
+	unsigned long flags;
+	struct list_head lru;
+	offset first_page;
+};
+
 enum slab_type {
 	slab_partial,
 	slab_full,
@@ -1375,8 +1412,7 @@ static int init_slab(void)
 
 		printf("found kmem cache name: %llx\n", o_cache_name);
 		cache_name = kt_strndup(o_cache_name, 128);
-		printf("cache name is: %s\n", cache_name);
-		free(cache_name);
+		printf("cache name is: %s\n", cache_name);free(cache_name);
 
 		init_kmem_cache(cache);
 	}
@@ -1405,11 +1441,74 @@ static unsigned long addr_to_pfn(offset addr)
 	return pa >> PAGE_SHIFT;
 }
 
-#define virt_to_page(addr)	pfn_to_page(addr_to_pfn(addr))
+#define virt_to_opage(addr)	pfn_to_page(addr_to_pfn(addr))
+
+//FIXME: support the CONFIG_PAGEFLAGS_EXTENDED variant?
+#define PageTail(page)	(page.flags & 1UL << PG_tail)
+#define PageSlab(page)	(page.flags & 1UL << PG_slab)
+
+static struct page read_page(offset o_page)
+{
+	char b_page[GET_TYPE_SIZE(page)];
+	struct page page;
+
+	KDUMP_TYPE_GET(page, o_page, b_page);
+
+	page.flags = kt_long_value(b_page + MEMBER_OFFSET(page, flags));
+	page.lru.next = kt_ptr_value(b_page + MEMBER_OFFSET(page, lru)
+					+ MEMBER_OFFSET(list_head, next));
+	page.lru.prev = kt_ptr_value(b_page + MEMBER_OFFSET(page, lru)
+					+ MEMBER_OFFSET(list_head, prev));
+	page.first_page = kt_ptr_value(b_page +
+					MEMBER_OFFSET(page, first_page));
+
+	return page;
+}
+
+static inline struct page compound_head(struct page page)
+{
+	if (PageTail(page))
+		return read_page(page.first_page);
+	return page;
+}
+
+static struct page virt_to_head_page(offset addr)
+{
+	struct page page;
+
+	page = read_page(virt_to_opage(addr));
+
+	return compound_head(page);
+}
+
+static int check_slab_obj(offset obj)
+{
+	struct page page;
+	offset o_cache;
+	char *b_cache;
+
+	page = virt_to_head_page(obj);
+
+	if (!PageSlab(page))
+		return 0;
+
+	printf("object %llx is on slab:\n", obj);
+	o_cache = page.lru.next;
+	b_cache = KDUMP_TYPE_ALLOC(kmem_cache);
+	KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache);
+
+	init_kmem_cache(b_cache);
+
+	free(b_cache);
+
+	return 1;
+}
 
 static int init_memmap(void)
 {
 	const char *cfg;
+	offset o_page;
+	struct page page;
 
 	//FIXME: why are all NULL?
 
@@ -1421,10 +1520,18 @@ static int init_memmap(void)
 
 	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_SPARSEMEM_VMEMMAP");
 	printf("CONFIG_SPARSEMEM_VMEMMAP=%s\n", cfg ? cfg : "(null)");
+/*
+	o_page = virt_to_opage(0xffff880138bedf40UL);
+	printf("ffff880138bedf40 is page %llx\n", o_page);
 
-	printf("ffff880138bedf40 is page %llx\n",
-			virt_to_page(0xffff880138bedf40UL));
+	page = read_page(o_page);
+	printf("flags=%lx lru=(%llx,%llx) first_page=%llx\n",page.flags,
+			page.lru.next, page.lru.prev, page.first_page);
+	printf("PG_slab=%llx\n", get_symbol_value("PG_slab"));
+	printf("PageSlab(page)==%d\n", PageSlab(page));
 
+	check_slab_obj(0xffff880138bedf40UL);
+*/
 	return 0;
 }
 
