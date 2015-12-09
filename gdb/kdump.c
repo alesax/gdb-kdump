@@ -540,12 +540,14 @@ static int kdump_type_member_init (struct type *type, const char *name, offset *
 	struct field *f;
 	int ret;
 	enum type_code tcode;
+	offset off;
 
 	f = TYPE_FIELDS(type);
 	for (i = 0; i < TYPE_NFIELDS(type); i++, f++) {
 		//printf("fieldname \'%s\'\n", f->name);
+		off = (f->loc.physaddr >> 3);
 		if (!strcmp(f->name, name)) {
-			*poffset = (f->loc.physaddr >> 3);
+			*poffset = off;
 			return 0;
 		}
 		if (strlen(f->name))
@@ -554,8 +556,10 @@ static int kdump_type_member_init (struct type *type, const char *name, offset *
 		if (tcode == TYPE_CODE_UNION || tcode == TYPE_CODE_STRUCT) {
 			//printf("recursing into unnamed union/struct\n");
 			ret = kdump_type_member_init(f->type, name, poffset);
-			if (ret != -1)
+			if (ret != -1) {
+				*poffset += off;
 				return ret;
+			}
 		}
 	}
 	return -1;
