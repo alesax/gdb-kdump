@@ -298,6 +298,13 @@ struct {
 
 	struct {
 		KDUMP_TYPE;
+		offset flags;
+		offset lru;
+		offset first_page;
+	} page;
+
+	struct {
+		KDUMP_TYPE;
 		offset array;
 		offset name;
 		offset list;
@@ -703,6 +710,11 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(module, srcversion);
 		INIT_STRUCT_MEMBER(module, name);
 		INIT_STRUCT_MEMBER(module, module_core);
+
+		INIT_STRUCT(page);
+		INIT_STRUCT_MEMBER(page, flags);
+		INIT_STRUCT_MEMBER(page, lru);
+		INIT_STRUCT_MEMBER(page, first_page);
 
 		INIT_STRUCT(kmem_cache);
 		INIT_STRUCT_MEMBER(kmem_cache, name);
@@ -1368,6 +1380,50 @@ static int init_slab(void)
 	return 0;
 }
 
+static kdump_paddr_t transform_memory(kdump_paddr_t addr);
+
+//TODO: get this via libkdumpfile somehow?
+#define VMEMMAP_START	0xffffea0000000000UL
+#define PAGE_SHIFT	12
+
+static offset pfn_to_page_memmap(unsigned long pfn)
+{
+	return VMEMMAP_START + pfn*GET_TYPE_SIZE(page);
+}
+
+//TODO: once the config querying below works, support all variants
+#define pfn_to_page(pfn) pfn_to_page_memmap(pfn)
+
+static unsigned long addr_to_pfn(offset addr)
+{
+	kdump_paddr_t pa = transform_memory(addr);
+
+	return pa >> PAGE_SHIFT;
+}
+
+#define virt_to_page(addr)	pfn_to_page(addr_to_pfn(addr))
+
+static int init_memmap(void)
+{
+	const char *cfg;
+
+	//FIXME: why are all NULL?
+
+	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_FLATMEM");
+	printf("CONFIG_FLATMEM=%s\n", cfg ? cfg : "(null)");
+
+	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_DISCONTIGMEM");
+	printf("CONFIG_DISCONTIGMEM=%s\n", cfg ? cfg : "(null)");
+
+	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_SPARSEMEM_VMEMMAP");
+	printf("CONFIG_SPARSEMEM_VMEMMAP=%s\n", cfg ? cfg : "(null)");
+
+	printf("ffff880138bedf40 is page %llx\n",
+			virt_to_page(0xffff880138bedf40UL));
+
+	return 0;
+}
+
 static int init_values(void);
 static int init_values(void)
 {
@@ -1468,6 +1524,7 @@ static int init_values(void)
 	if (init_task) free(init_task);
 
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
+	init_memmap();
 	return init_slab();
 error:
 	if (b) free(b);
@@ -1629,7 +1686,6 @@ core_detach (struct target_ops *ops, const char *args, int from_tty)
 		printf_filtered (_("No core file now.\n"));
 }
 
-static kdump_paddr_t transform_memory(kdump_paddr_t addr);
 static kdump_paddr_t transform_memory(kdump_paddr_t addr)
 {
 	kdump_paddr_t out;
