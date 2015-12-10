@@ -58,6 +58,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <hashtab.h>
 
 
 #include <dirent.h>
@@ -1135,13 +1136,44 @@ typedef unsigned int kmem_bufctl_t;
 
 
 struct kmem_cache {
+	offset o_cache;
 	unsigned int num;
+	htab_t obj_ac;
 };
 
 struct kmem_slab {
 	kmem_bufctl_t free;
 	unsigned int inuse;
 	enum slab_type type;
+};
+
+/* Cache of kmem_cache structs indexed by offset */
+static htab_t kmem_cache_cache;
+
+/* Just get the least significant bits of the offset */
+static hashval_t kmem_cache_hash(const void *p)
+{
+	return ((struct kmem_cache*)p)->o_cache;
+}
+
+static int kmem_cache_eq(const void *cache, const void *off)
+{
+	return (((struct kmem_cache *)cache)->o_cache == *(offset *)off);
+}
+
+struct kmem_ac {
+	offset offset;
+	enum ac_type type;
+	/* At which node cache resides (-1 for percpu) */
+	int at_node;
+	/* For which node or cpu the cache is (-1 for shared) */
+	int for_node_cpu;
+};
+
+/* A mapping between object's offset and array_cache */
+struct kmem_obj_ac {
+	offset obj;
+	struct kmem_ac *ac;
 };
 
 static int init_kmem_slab(struct kmem_cache *cachep, offset o_slab, char *b_slab, enum slab_type type);
@@ -1325,17 +1357,30 @@ static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3,
 	return 0;
 }
 
-static int init_kmem_cache(char *b_cache);
-static int init_kmem_cache(char *b_cache)
+static int init_kmem_cache(offset o_cache, char *b_cache);
+static int init_kmem_cache(offset o_cache, char *b_cache)
 {
 	char *nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
 	char *array_caches = b_cache + MEMBER_OFFSET(kmem_cache, array);
 	offset o_nodelist, o_array_cache;
 	char *nodelist, *array_cache;
-	struct kmem_cache cache;
+	struct kmem_cache *cache;
 	int node;
+	void **slot;
 
-	cache.num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
+	slot = htab_find_slot_with_hash(kmem_cache_cache, &o_cache, o_cache,
+								INSERT);
+	if (*slot) {
+		printf("kmem_cache found in hashtab!\n");
+		return 0;
+	} else {
+		printf("kmem_cache not found in hashtab, inserting\n");
+		cache = malloc(sizeof(struct kmem_cache));
+		cache->o_cache = o_cache;
+		cache->num = kt_int_value(b_cache +
+					MEMBER_OFFSET(kmem_cache, num));
+		*slot = cache;
+	}
 
 	nodelist = KDUMP_TYPE_ALLOC(kmem_list3);
 	for (node = 0; node < nr_node_ids; node++,
@@ -1345,14 +1390,16 @@ static int init_kmem_cache(char *b_cache)
 			continue;
 		printf("found nodelist[%d] %llx\n", node, o_nodelist);
 		KDUMP_TYPE_GET(kmem_list3, o_nodelist, nodelist);
-		init_kmem_list3(&cache, o_nodelist, nodelist, node);
+		init_kmem_list3(cache, o_nodelist, nodelist, node);
 	}
 	KDUMP_TYPE_FREE(nodelist);
 
-	init_kmem_array_caches(&cache, array_caches, -1, nr_cpu_ids, ac_percpu);
+	init_kmem_array_caches(cache, array_caches, -1, nr_cpu_ids, ac_percpu);
 
 	return 0;
 }
+
+static int check_slab_obj(offset obj);
 
 static int init_slab(void);
 static int init_slab(void)
@@ -1362,6 +1409,9 @@ static int init_slab(void)
 	char *lhb, *cache;
 	char *cache_name;
 	offset o_cache_name, o_nr_node_ids, o_nr_cpu_ids;
+
+	kmem_cache_cache = htab_create_alloc (64, kmem_cache_hash,
+					kmem_cache_eq, NULL, xcalloc, xfree);
 
 	o_slab_caches = get_symbol_value("slab_caches");
 	if (! o_slab_caches) {
@@ -1414,8 +1464,10 @@ static int init_slab(void)
 		cache_name = kt_strndup(o_cache_name, 128);
 		printf("cache name is: %s\n", cache_name);free(cache_name);
 
-		init_kmem_cache(cache);
+		init_kmem_cache(o_kmem_cache, cache);
 	}
+
+//	check_slab_obj(0xffff880138bedf40UL);
 
 	return 0;
 }
@@ -1497,7 +1549,7 @@ static int check_slab_obj(offset obj)
 	b_cache = KDUMP_TYPE_ALLOC(kmem_cache);
 	KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache);
 
-	init_kmem_cache(b_cache);
+	init_kmem_cache(o_cache, b_cache);
 
 	free(b_cache);
 
@@ -1529,8 +1581,6 @@ static int init_memmap(void)
 			page.lru.next, page.lru.prev, page.first_page);
 	printf("PG_slab=%llx\n", get_symbol_value("PG_slab"));
 	printf("PageSlab(page)==%d\n", PageSlab(page));
-
-	check_slab_obj(0xffff880138bedf40UL);
 */
 	return 0;
 }
