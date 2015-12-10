@@ -1285,6 +1285,9 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 	char *b_entries;
 	offset o_entries = o_array_cache + MEMBER_OFFSET(array_cache, entry);
 	offset o_obj;
+	void **slot;
+	struct kmem_ac *ac;
+	struct kmem_obj_ac *obj_ac;
 
 	avail = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, avail));
 	limit = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, limit));
@@ -1297,6 +1300,15 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 		printf("array_cache %llx has avail=%d > limit=%d\n",
 						o_array_cache, avail, limit);
 
+	if (!avail)
+		return 0;
+
+	ac = malloc(sizeof(struct kmem_ac));
+	ac->offset = o_array_cache;
+	ac->type = type;
+	ac->at_node = id1;
+	ac->for_node_cpu = id2;
+
 	b_entries = malloc(avail * GET_TYPE_SIZE(_voidp));
 
 	target_read_raw_memory(o_entries, (void *)b_entries,
@@ -1305,6 +1317,18 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 	for (i = 0; i < avail; i++) {
 		o_obj = kt_ptr_value(b_entries + i * GET_TYPE_SIZE(_voidp));
 		printf("cached obj: %llx\n", o_obj);
+
+		slot = htab_find_slot_with_hash(cachep->obj_ac, &o_obj, o_obj,
+								INSERT);
+
+		if (*slot)
+			printf("obj %llx already in array_cache!\n", o_obj);
+
+		obj_ac = malloc(sizeof(struct kmem_obj_ac));
+		obj_ac->obj = o_obj;
+		obj_ac->ac = ac;
+
+		*slot = obj_ac;
 	}
 
 	free(b_entries);
@@ -1483,9 +1507,10 @@ static int init_slab(void)
 
 		init_kmem_cache(o_kmem_cache);
 	}
-
-//	check_slab_obj(0xffff880138bedf40UL);
-
+/*
+	check_slab_obj(0xffff880138bedf40UL);
+	check_slab_obj(0xffff8801359734c0UL);
+*/
 	return 0;
 }
 
@@ -1554,7 +1579,8 @@ static int check_slab_obj(offset obj)
 {
 	struct page page;
 	offset o_cache;
-	char *b_cache;
+	struct kmem_cache *cachep;
+	struct kmem_ac_obj *ac_obj;
 
 	page = virt_to_head_page(obj);
 
@@ -1564,7 +1590,12 @@ static int check_slab_obj(offset obj)
 	printf("object %llx is on slab:\n", obj);
 	o_cache = page.lru.next;
 
-	init_kmem_cache(o_cache);
+	cachep = init_kmem_cache(o_cache);
+
+	ac_obj = htab_find_with_hash(cachep->obj_ac, &obj, obj);
+
+	if (ac_obj)
+		printf("object is in cache\n");
 
 	return 1;
 }
