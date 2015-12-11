@@ -120,9 +120,10 @@ static int nr_cpu_ids = 1;
 #define list_for_each(pos, head) \
 	for (pos = kt_ptr_value(head); pos != (head); KDUMP_TYPE_GET(_voidp,pos,&pos)
 
-#define list_head_for_each(head,lhb, _nxt) for((_nxt = kt_ptr_value(lhb)), KDUMP_TYPE_GET(list_head, _nxt, lhb);\
-	(_nxt = kt_ptr_value(lhb)) != head; \
-	KDUMP_TYPE_GET(list_head, _nxt, lhb))
+#define list_head_for_each(head, lhb, _nxt)					\
+	for(_nxt = kt_ptr_value(lhb), KDUMP_TYPE_GET(list_head, _nxt, lhb);	\
+		_nxt != head;							\
+		_nxt = kt_ptr_value(lhb), KDUMP_TYPE_GET(list_head, _nxt, lhb))
 
 enum x86_64_regs {
 	reg_RAX = 0,
