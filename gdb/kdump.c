@@ -120,9 +120,10 @@ static int nr_cpu_ids = 1;
 #define list_for_each(pos, head) \
 	for (pos = kt_ptr_value(head); pos != (head); KDUMP_TYPE_GET(_voidp,pos,&pos)
 
-#define list_head_for_each(head, lhb, _nxt)					\
-	for(_nxt = kt_ptr_value(lhb), KDUMP_TYPE_GET(list_head, _nxt, lhb);	\
-		_nxt != head;							\
+#define list_head_for_each(head, lhb, _nxt)				      \
+	for(KDUMP_TYPE_GET(list_head, head, lhb), _nxt = kt_ptr_value(lhb),   \
+					KDUMP_TYPE_GET(list_head, _nxt, lhb); \
+		_nxt != head;						      \
 		_nxt = kt_ptr_value(lhb), KDUMP_TYPE_GET(list_head, _nxt, lhb))
 
 enum x86_64_regs {
@@ -1309,7 +1310,6 @@ check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 	printf("checking slab list %llx type %s\n", o_slabs,
 							slab_type_names[type]);
 
-	KDUMP_TYPE_GET(list_head, o_slabs, b_lhb);
 	list_head_for_each(o_slabs, b_lhb, o_lhb) {
 		o_slab = o_lhb - MEMBER_OFFSET(slab, list);
 //		printf("found slab: %llx\n", o_slab);
@@ -1552,7 +1552,7 @@ static void check_kmem_cache(struct kmem_cache *cache)
 static int init_kmem_caches(void)
 {
 	offset o_lh, o_kmem_cache;
-	char *lhb;
+	char lhb[GET_TYPE_SIZE(list_head)];
 	offset o_nr_node_ids, o_nr_cpu_ids;
 
 	kmem_cache_cache = htab_create_alloc(64, kmem_cache_hash,
@@ -1586,10 +1586,6 @@ static int init_kmem_caches(void)
 		printf("nr_node_ids = %d\n", nr_node_ids);
 	}
 
-
-	lhb = KDUMP_TYPE_ALLOC(list_head);
-
-	KDUMP_TYPE_GET(list_head, o_slab_caches, lhb);
 	list_head_for_each(o_slab_caches, lhb, o_lh) {
 		o_kmem_cache = o_lh - MEMBER_OFFSET(kmem_cache,list);
 		printf("found kmem cache: %llx\n", o_kmem_cache);
@@ -1609,7 +1605,6 @@ static void check_kmem_caches(void)
 	if (!kmem_cache_cache)
 		init_kmem_caches();
 
-	KDUMP_TYPE_GET(list_head, o_slab_caches, b_lhb);
 	list_head_for_each(o_slab_caches, b_lhb, o_lhb) {
 		o_kmem_cache = o_lhb - MEMBER_OFFSET(kmem_cache,list);
 
@@ -1794,6 +1789,7 @@ static int init_values(void)
 	int cnt = 0;
 	int pid_reserve;
 	struct task_info *task_info;
+	char lhb[GET_TYPE_SIZE(list_head)];
 
 	s = NULL;
 	
@@ -1839,7 +1835,7 @@ static int init_values(void)
 	in = current_inferior();
 	inferior_appeared (in, 1);
 
-	list_head_for_each(tasks, init_task + MEMBER_OFFSET(task_struct,tasks), off) {
+	list_head_for_each(tasks, lhb, off) {
 		
 		struct thread_info *info;
 		int pid;
