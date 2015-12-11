@@ -1152,7 +1152,7 @@ struct kmem_slab {
 	kmem_bufctl_t free;
 	unsigned int inuse;
 	offset s_mem;
-	char *b_bufctl;
+	kmem_bufctl_t *bufctl;
 };
 
 /* Cache of kmem_cache structs indexed by offset */
@@ -1201,8 +1201,12 @@ init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
 	char b_slab[GET_TYPE_SIZE(slab)];
 	struct kmem_slab *slab;
 	offset o_bufctl = o_slab + GET_TYPE_SIZE(slab);
-	//FIXME: use kmem_bufctl_t, which didn't work in INIT_BASE_TYPE though
-	size_t bufctl_size = cachep->num * GET_TYPE_SIZE(_int);
+	size_t bufctl_size = cachep->num * sizeof(kmem_bufctl_t);
+	//FIXME: use target's kmem_bufctl_t typedef, which didn't work in
+	//INIT_BASE_TYPE though
+	size_t bufctl_size_target = cachep->num * GET_TYPE_SIZE(_int);
+	char b_bufctl[bufctl_size_target];
+	int i;
 
 	KDUMP_TYPE_GET(slab, o_slab, b_slab);
 	slab = malloc(sizeof(struct kmem_slab));
@@ -1212,15 +1216,18 @@ init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
 	slab->free = kt_int_value(b_slab + MEMBER_OFFSET(slab, free));
 	slab->s_mem = kt_ptr_value(b_slab + MEMBER_OFFSET(slab, s_mem));
 
-	slab->b_bufctl = malloc(bufctl_size);
-	target_read_raw_memory(o_bufctl, (void *) slab->b_bufctl, bufctl_size);
+	slab->bufctl = malloc(bufctl_size);
+	target_read_raw_memory(o_bufctl, (void *) b_bufctl, bufctl_size_target);
+
+	for (i = 0; i < cachep->num; i++)
+		slab->bufctl[i] = kt_int_value(b_bufctl + i*GET_TYPE_SIZE(_int));
 
 	return slab;
 }
 
 static void free_kmem_slab(struct kmem_slab *slab)
 {
-	free(slab->b_bufctl);
+	free(slab->bufctl);
 	free(slab);
 }
 
@@ -1244,7 +1251,7 @@ static void check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 			break;
 		}
 
-		i = kt_int_value(slab->b_bufctl + i*GET_TYPE_SIZE(_int));
+		i = slab->bufctl[i];
 	}
 
 //	printf("slab inuse=%d cnt_free=%d num=%d\n", slab->inuse, counted_free,
