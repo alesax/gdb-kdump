@@ -1391,13 +1391,39 @@ static int init_kmem_array_caches(struct kmem_cache *cachep, char * b_caches,
 
 }
 
-static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3,
-							char *list3, int nid)
+static void init_kmem_list3_arrays(struct kmem_cache *cachep, offset o_list3,
+								int nid)
 {
-	offset o_lhb;
+	char b_list3[GET_TYPE_SIZE(kmem_list3)];
 	offset o_alien_caches;
 	char *b_alien_caches;
 	char *b_shared_caches;
+
+	KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3);
+
+	/* This is a single pointer, but treat it as array to reuse code */
+	b_shared_caches = b_list3 + MEMBER_OFFSET(kmem_list3, shared);
+	init_kmem_array_caches(cachep, b_shared_caches, nid, 1, ac_shared);
+
+	o_alien_caches = kt_ptr_value(b_list3 +
+					MEMBER_OFFSET(kmem_list3, alien));
+	b_alien_caches = malloc(nr_node_ids * GET_TYPE_SIZE(_voidp));
+	target_read_raw_memory(o_alien_caches, (void *)b_alien_caches,
+					nr_node_ids * GET_TYPE_SIZE(_voidp));
+
+	init_kmem_array_caches(cachep, b_alien_caches, nid, nr_node_ids,
+								ac_alien);
+
+	free(b_alien_caches);
+}
+
+static void check_kmem_list3_slabs(struct kmem_cache *cachep, offset o_list3,
+								int nid)
+{
+	char b_list3[GET_TYPE_SIZE(kmem_list3)];
+	offset o_lhb;
+
+	KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_partial);
 	init_kmem_slabs(cachep, o_lhb, slab_partial);
@@ -1407,22 +1433,6 @@ static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3,
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
 	init_kmem_slabs(cachep, o_lhb, slab_free);
-
-	/* This is a single pointer, but treat it as array to reuse code */
-	b_shared_caches = list3 + MEMBER_OFFSET(kmem_list3, shared);
-	init_kmem_array_caches(cachep, b_shared_caches, nid, 1, ac_shared);
-
-	o_alien_caches = kt_ptr_value(list3 + MEMBER_OFFSET(kmem_list3, alien));
-	b_alien_caches = malloc(nr_node_ids * GET_TYPE_SIZE(_voidp));
-	target_read_raw_memory(o_alien_caches, (void *)b_alien_caches,
-					nr_node_ids * GET_TYPE_SIZE(_voidp));
-
-	init_kmem_array_caches(cachep, b_alien_caches, nid, nr_node_ids,
-								ac_alien);
-
-	free(b_alien_caches);
-
-	return 0;
 }
 
 static int init_kmem_caches(void);
@@ -1472,8 +1482,7 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 static void init_kmem_cache_arrays(struct kmem_cache *cache)
 {
 	char b_cache[GET_TYPE_SIZE(kmem_cache)];
-	char *nodelists;
-	char *array_caches;
+	char *b_nodelists, *b_array_caches;
 	offset o_nodelist, o_array_cache;
 	char *nodelist, *array_cache;
 	int node;
@@ -1486,21 +1495,19 @@ static void init_kmem_cache_arrays(struct kmem_cache *cache)
 	cache->obj_ac = htab_create_alloc(64, kmem_ac_hash, kmem_ac_eq,
 						NULL, xcalloc, xfree);
 
-	nodelist = KDUMP_TYPE_ALLOC(kmem_list3);
-	nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
-	for (node = 0; node < nr_node_ids; node++,
-					nodelists += GET_TYPE_SIZE(_voidp)) {
-		o_nodelist = kt_ptr_value(nodelists);
+	b_nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
+	for (node = 0; node < nr_node_ids;
+			node++, b_nodelists += GET_TYPE_SIZE(_voidp)) {
+		o_nodelist = kt_ptr_value(b_nodelists);
 		if (!o_nodelist)
 			continue;
 		printf("found nodelist[%d] %llx\n", node, o_nodelist);
-		KDUMP_TYPE_GET(kmem_list3, o_nodelist, nodelist);
-		init_kmem_list3(cache, o_nodelist, nodelist, node);
+		init_kmem_list3_arrays(cache, o_nodelist, node);
 	}
-	KDUMP_TYPE_FREE(nodelist);
 
-	array_caches = b_cache + MEMBER_OFFSET(kmem_cache, array);
-	init_kmem_array_caches(cache, array_caches, -1, nr_cpu_ids, ac_percpu);
+	b_array_caches = b_cache + MEMBER_OFFSET(kmem_cache, array);
+	init_kmem_array_caches(cache, b_array_caches, -1, nr_cpu_ids,
+								ac_percpu);
 
 	cache->array_caches_inited = 1;
 }
