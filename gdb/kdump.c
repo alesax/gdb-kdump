@@ -327,6 +327,7 @@ struct {
 		offset slabs_free;
 		offset shared;
 		offset alien;
+		offset free_objects;
 	} kmem_list3;
 
 	struct {
@@ -761,6 +762,7 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(kmem_list3, slabs_free);
 		INIT_STRUCT_MEMBER(kmem_list3, shared);
 		INIT_STRUCT_MEMBER(kmem_list3, alien);
+		INIT_STRUCT_MEMBER(kmem_list3, free_objects);
 
 		INIT_STRUCT(array_cache);
 		INIT_STRUCT_MEMBER(array_cache, avail);
@@ -1240,7 +1242,8 @@ static void free_kmem_slab(struct kmem_slab *slab)
 	free(slab);
 }
 
-static void check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
+static unsigned int
+check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 							enum slab_type type)
 {
 	unsigned int counted_free = 0;
@@ -1290,14 +1293,18 @@ static void check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 	default:
 		exit(1);
 	}
+
+	return counted_free;
 }
 
-static void check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
+static unsigned long
+check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 							enum slab_type type)
 {
 	char b_lhb[GET_TYPE_SIZE(list_head)];
 	offset o_lhb, o_slab;
 	struct kmem_slab *slab;
+	unsigned long counted_free = 0;
 
 	printf("checking slab list %llx type %s\n", o_slabs,
 							slab_type_names[type]);
@@ -1307,9 +1314,11 @@ static void check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 		o_slab = o_lhb - MEMBER_OFFSET(slab, list);
 //		printf("found slab: %llx\n", o_slab);
 		slab = init_kmem_slab(cachep, o_slab);
-		check_kmem_slab(cachep, slab, type);
+		counted_free += check_kmem_slab(cachep, slab, type);
 		free_kmem_slab(slab);
 	}
+
+	return counted_free;
 }
 
 static int init_kmem_array_cache(struct kmem_cache *cachep,
@@ -1415,22 +1424,31 @@ static void init_kmem_list3_arrays(struct kmem_cache *cachep, offset o_list3,
 	free(b_alien_caches);
 }
 
-static void check_kmem_list3_slabs(struct kmem_cache *cachep, offset o_list3,
-								int nid)
+static void check_kmem_list3_slabs(struct kmem_cache *cachep,
+						offset o_list3,	int nid)
 {
 	char b_list3[GET_TYPE_SIZE(kmem_list3)];
 	offset o_lhb;
+	unsigned long counted_free = 0;
+	unsigned long free_objects;
 
 	KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3);
+	free_objects = kt_long_value(b_list3 + MEMBER_OFFSET(kmem_list3,
+							free_objects));
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_partial);
-	check_kmem_slabs(cachep, o_lhb, slab_partial);
+	counted_free += check_kmem_slabs(cachep, o_lhb, slab_partial);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_full);
-	check_kmem_slabs(cachep, o_lhb, slab_full);
+	counted_free += check_kmem_slabs(cachep, o_lhb, slab_full);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
-	check_kmem_slabs(cachep, o_lhb, slab_free);
+	counted_free += check_kmem_slabs(cachep, o_lhb, slab_free);
+
+	printf("free=%lu counted=%lu\n", free_objects, counted_free);
+	if (free_objects != counted_free)
+		fprintf(stderr, "cache %s free=%lu counted=%lu\n", cachep->name,
+						free_objects, counted_free);
 }
 
 static struct kmem_cache *init_kmem_cache(offset o_cache)
@@ -1447,11 +1465,11 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 								INSERT);
 	if (*slot) {
 		cache = (struct kmem_cache*) *slot;
-		printf("kmem_cache %s found in hashtab!\n", cache->name);
+//		printf("kmem_cache %s found in hashtab!\n", cache->name);
 		return cache;
 	}
 
-	printf("kmem_cache %llxnot found in hashtab, inserting\n", o_cache);
+//	printf("kmem_cache %llx not found in hashtab, inserting\n", o_cache);
 
 	KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache);
 
@@ -1594,9 +1612,10 @@ static void check_kmem_caches(void)
 	KDUMP_TYPE_GET(list_head, o_slab_caches, b_lhb);
 	list_head_for_each(o_slab_caches, b_lhb, o_lhb) {
 		o_kmem_cache = o_lhb - MEMBER_OFFSET(kmem_cache,list);
-		printf("checking kmem cache: %llx\n", o_kmem_cache);
 
 		cache = init_kmem_cache(o_kmem_cache);
+		printf("checking kmem cache %llx name %s\n", o_kmem_cache,
+				cache->name);
 		check_kmem_cache(cache);
 	}
 }
@@ -1861,9 +1880,9 @@ static int init_values(void)
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
+	check_kmem_caches();
 //	check_slab_obj(0xffff880138bedf40UL);
 //	check_slab_obj(0xffff8801359734c0UL);
-//	check_kmem_caches();
 
 	return 0;
 error:
