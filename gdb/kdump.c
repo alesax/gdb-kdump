@@ -1159,6 +1159,9 @@ struct kmem_slab {
 /* Cache of kmem_cache structs indexed by offset */
 static htab_t kmem_cache_cache;
 
+/* List_head of all kmem_caches */
+offset o_slab_caches;
+
 /* Just get the least significant bits of the offset */
 static hashval_t kmem_cache_hash(const void *p)
 {
@@ -1284,7 +1287,7 @@ static void check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 	}
 }
 
-static int init_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type)
+static void check_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type)
 {
 	char *lhb;
 	offset o_lh, o_slab;
@@ -1305,8 +1308,6 @@ static int init_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_ty
 	}
 
 	free(lhb);
-
-	return 0;
 }
 
 static int init_kmem_array_cache(struct kmem_cache *cachep,
@@ -1426,13 +1427,13 @@ static void check_kmem_list3_slabs(struct kmem_cache *cachep, offset o_list3,
 	KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_partial);
-	init_kmem_slabs(cachep, o_lhb, slab_partial);
+	check_kmem_slabs(cachep, o_lhb, slab_partial);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_full);
-	init_kmem_slabs(cachep, o_lhb, slab_full);
+	check_kmem_slabs(cachep, o_lhb, slab_full);
 
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
-	init_kmem_slabs(cachep, o_lhb, slab_free);
+	check_kmem_slabs(cachep, o_lhb, slab_free);
 }
 
 static int init_kmem_caches(void);
@@ -1512,11 +1513,33 @@ static void init_kmem_cache_arrays(struct kmem_cache *cache)
 	cache->array_caches_inited = 1;
 }
 
+static void check_kmem_cache(struct kmem_cache *cache)
+{
+	char b_cache[GET_TYPE_SIZE(kmem_cache)];
+	char *b_nodelists, *b_array_caches;
+	offset o_nodelist, o_array_cache;
+	char *nodelist, *array_cache;
+	int node;
+
+	init_kmem_cache_arrays(cache);
+
+	KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache);
+
+	b_nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
+	for (node = 0; node < nr_node_ids;
+			node++, b_nodelists += GET_TYPE_SIZE(_voidp)) {
+		o_nodelist = kt_ptr_value(b_nodelists);
+		if (!o_nodelist)
+			continue;
+		printf("found nodelist[%d] %llx\n", node, o_nodelist);
+		check_kmem_list3_slabs(cache, o_nodelist, node);
+	}
+}
+
 static int check_slab_obj(offset obj);
 
 static int init_kmem_caches(void)
 {
-	offset o_slab_caches;
 	offset o_lh, o_kmem_cache;
 	char *lhb;
 	offset o_nr_node_ids, o_nr_cpu_ids;
@@ -1564,6 +1587,25 @@ static int init_kmem_caches(void)
 	}
 
 	return 0;
+}
+
+static void check_kmem_caches(void)
+{
+	offset o_lhb, o_kmem_cache;
+	char b_lhb[GET_TYPE_SIZE(list_head)];
+	struct kmem_cache *cache;
+
+	if (!kmem_cache_cache)
+		init_kmem_caches();
+
+	KDUMP_TYPE_GET(list_head, o_slab_caches, b_lhb);
+	list_head_for_each(o_slab_caches, b_lhb, o_lhb) {
+		o_kmem_cache = o_lhb - MEMBER_OFFSET(kmem_cache,list);
+		printf("checking kmem cache: %llx\n", o_kmem_cache);
+
+		cache = init_kmem_cache(o_kmem_cache);
+		check_kmem_cache(cache);
+	}
 }
 
 static kdump_paddr_t transform_memory(kdump_paddr_t addr);
@@ -1826,8 +1868,9 @@ static int init_values(void)
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
-	check_slab_obj(0xffff880138bedf40UL);
-	check_slab_obj(0xffff8801359734c0UL);
+//	check_slab_obj(0xffff880138bedf40UL);
+//	check_slab_obj(0xffff8801359734c0UL);
+//	check_kmem_caches();
 
 	return 0;
 error:
