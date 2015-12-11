@@ -1507,10 +1507,10 @@ static int init_slab(void)
 
 		init_kmem_cache(o_kmem_cache);
 	}
-/*
-	check_slab_obj(0xffff880138bedf40UL);
-	check_slab_obj(0xffff8801359734c0UL);
-*/
+
+//	check_slab_obj(0xffff880138bedf40UL);
+//	check_slab_obj(0xffff8801359734c0UL);
+
 	return 0;
 }
 
@@ -1580,7 +1580,8 @@ static int check_slab_obj(offset obj)
 	struct page page;
 	offset o_cache;
 	struct kmem_cache *cachep;
-	struct kmem_ac_obj *ac_obj;
+	struct kmem_obj_ac *obj_ac;
+	struct kmem_ac *ac;
 
 	page = virt_to_head_page(obj);
 
@@ -1592,10 +1593,14 @@ static int check_slab_obj(offset obj)
 
 	cachep = init_kmem_cache(o_cache);
 
-	ac_obj = htab_find_with_hash(cachep->obj_ac, &obj, obj);
+	obj_ac = htab_find_with_hash(cachep->obj_ac, &obj, obj);
 
-	if (ac_obj)
-		printf("object is in cache\n");
+	if (obj_ac) {
+		ac = obj_ac->ac;
+		printf("object is in array_cache %llx type %s[%d,%d]\n",
+			ac->offset, ac_type_names[ac->type], ac->at_node,
+			ac->for_node_cpu);
+	}
 
 	return 1;
 }
