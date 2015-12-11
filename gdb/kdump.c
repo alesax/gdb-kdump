@@ -1145,6 +1145,7 @@ struct kmem_cache {
 	unsigned int num;
 	htab_t obj_ac;
 	unsigned int buffer_size;
+	int array_caches_inited;
 };
 
 struct kmem_slab {
@@ -1424,16 +1425,17 @@ static int init_kmem_list3(struct kmem_cache *cachep, offset o_list3,
 	return 0;
 }
 
+static int init_kmem_caches(void);
+
 static struct kmem_cache *init_kmem_cache(offset o_cache)
 {
-	char *b_cache;
-	char *nodelists;
-	char *array_caches;
-	offset o_nodelist, o_array_cache, o_cache_name;
-	char *nodelist, *array_cache;
 	struct kmem_cache *cache;
-	int node;
+	char b_cache[GET_TYPE_SIZE(kmem_cache)];
+	offset o_cache_name;
 	void **slot;
+
+	if (!kmem_cache_cache)
+		init_kmem_caches();
 
 	slot = htab_find_slot_with_hash(kmem_cache_cache, &o_cache, o_cache,
 								INSERT);
@@ -1443,9 +1445,8 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 		return cache;
 	}
 
-	printf("kmem_cache not found in hashtab, inserting\n");
+	printf("kmem_cache %llxnot found in hashtab, inserting\n", o_cache);
 
-	b_cache = KDUMP_TYPE_ALLOC(kmem_cache);
 	KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache);
 
 	cache = malloc(sizeof(struct kmem_cache));
@@ -1453,11 +1454,9 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 	cache->num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
 	cache->buffer_size = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache,
 								buffer_size));
+	cache->array_caches_inited = 0;
 
-	cache->obj_ac = htab_create_alloc(64, kmem_ac_hash, kmem_ac_eq,
-						NULL, xcalloc, xfree);
-	o_cache_name = kt_ptr_value(b_cache +
-				MEMBER_OFFSET(kmem_cache,name));
+	o_cache_name = kt_ptr_value(b_cache + MEMBER_OFFSET(kmem_cache,name));
 	if (!o_cache_name) {
 		fprintf(stderr, "cache name pointer NULL\n");
 		cache->name = "(null)";
@@ -1465,6 +1464,27 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 
 	cache->name = kt_strndup(o_cache_name, 128);
 	printf("cache name is: %s\n", cache->name);
+
+	*slot = cache;
+	return cache;
+}
+
+static void init_kmem_cache_arrays(struct kmem_cache *cache)
+{
+	char b_cache[GET_TYPE_SIZE(kmem_cache)];
+	char *nodelists;
+	char *array_caches;
+	offset o_nodelist, o_array_cache;
+	char *nodelist, *array_cache;
+	int node;
+
+	if (cache->array_caches_inited)
+		return;
+
+	KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache);
+
+	cache->obj_ac = htab_create_alloc(64, kmem_ac_hash, kmem_ac_eq,
+						NULL, xcalloc, xfree);
 
 	nodelist = KDUMP_TYPE_ALLOC(kmem_list3);
 	nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
@@ -1482,16 +1502,12 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 	array_caches = b_cache + MEMBER_OFFSET(kmem_cache, array);
 	init_kmem_array_caches(cache, array_caches, -1, nr_cpu_ids, ac_percpu);
 
-	*slot = cache;
-	KDUMP_TYPE_FREE(b_cache);
-
-	return cache;
+	cache->array_caches_inited = 1;
 }
 
 static int check_slab_obj(offset obj);
 
-static int init_slab(void);
-static int init_slab(void)
+static int init_kmem_caches(void)
 {
 	offset o_slab_caches;
 	offset o_lh, o_kmem_cache;
@@ -1539,9 +1555,6 @@ static int init_slab(void)
 
 		init_kmem_cache(o_kmem_cache);
 	}
-
-//	check_slab_obj(0xffff880138bedf40UL);
-//	check_slab_obj(0xffff8801359734c0UL);
 
 	return 0;
 }
@@ -1631,6 +1644,7 @@ static int check_slab_obj(offset obj)
 								o_cache);
 
 	cachep = init_kmem_cache(o_cache);
+	init_kmem_cache_arrays(cachep);
 	slabp = init_kmem_slab(cachep, o_slab);
 
 	//TODO: kernel implementation uses reciprocal_divide, check?
@@ -1804,7 +1818,11 @@ static int init_values(void)
 
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
-	return init_slab();
+
+	check_slab_obj(0xffff880138bedf40UL);
+	check_slab_obj(0xffff8801359734c0UL);
+
+	return 0;
 error:
 	if (b) free(b);
 	if (init_task) free(init_task);
