@@ -1347,7 +1347,7 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 
 	for (i = 0; i < avail; i++) {
 		o_obj = kt_ptr_value(b_entries + i * GET_TYPE_SIZE(_voidp));
-		printf("cached obj: %llx\n", o_obj);
+		//printf("cached obj: %llx\n", o_obj);
 
 		slot = htab_find_slot_with_hash(cachep->obj_ac, &o_obj, o_obj,
 								INSERT);
@@ -1450,8 +1450,9 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 
 	cache = malloc(sizeof(struct kmem_cache));
 	cache->o_cache = o_cache;
-	cache->num = kt_int_value(b_cache +
-				MEMBER_OFFSET(kmem_cache, num));
+	cache->num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
+	cache->buffer_size = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache,
+								buffer_size));
 
 	cache->obj_ac = htab_create_alloc(64, kmem_ac_hash, kmem_ac_eq,
 						NULL, xcalloc, xfree);
@@ -1611,8 +1612,13 @@ static int check_slab_obj(offset obj)
 	struct page page;
 	offset o_cache, o_slab;
 	struct kmem_cache *cachep;
+	struct kmem_slab *slabp;
 	struct kmem_obj_ac *obj_ac;
 	struct kmem_ac *ac;
+	unsigned int idx;
+	offset obj_base;
+	unsigned int i, cnt = 0;
+	int free = 0;
 
 	page = virt_to_head_page(obj);
 
@@ -1621,10 +1627,38 @@ static int check_slab_obj(offset obj)
 
 	o_cache = page.lru.next;
 	o_slab = page.lru.prev;
-	printf("object %llx is on slab %llx of cache %llx\n", obj, o_slab,
+	printf("pointer %llx is on slab %llx of cache %llx\n", obj, o_slab,
 								o_cache);
 
 	cachep = init_kmem_cache(o_cache);
+	slabp = init_kmem_slab(cachep, o_slab);
+
+	//TODO: kernel implementation uses reciprocal_divide, check?
+	idx = (obj - slabp->s_mem) / cachep->buffer_size;
+	obj_base = slabp->s_mem + idx * cachep->buffer_size;
+
+	printf("pointer is to object %llx with index %u\n", obj_base, idx);
+
+	i = slabp->free;
+	while (i != BUFCTL_END) {
+		cnt++;
+
+		if (cnt > cachep->num) {
+			printf("free bufctl cycle detected in slab %llx\n", o_slab);
+			break;
+		}
+		if (i > cachep->num) {
+			printf("bufctl value overflow (%d) in slab %llx\n", i, o_slab);
+			break;
+		}
+
+		if (i == idx)
+			free = 1;
+
+		i = slabp->bufctl[i];
+	}
+
+	printf("object is %s\n", free ? "free" : "allocated");
 
 	obj_ac = htab_find_with_hash(cachep->obj_ac, &obj, obj);
 
@@ -1634,6 +1668,8 @@ static int check_slab_obj(offset obj)
 			ac->offset, ac_type_names[ac->type], ac->at_node,
 			ac->for_node_cpu);
 	}
+
+	free_kmem_slab(slabp);
 
 	return 1;
 }
