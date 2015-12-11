@@ -1198,6 +1198,10 @@ static int kmem_ac_eq(const void *obj, const void *off)
 	return (((struct kmem_obj_ac*)obj)->obj == *(offset *)off);
 }
 
+static int check_slab_obj(offset obj);
+static int init_kmem_caches(void);
+
+
 //TODO: have some hashtable-based cache as well?
 static struct kmem_slab *
 init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
@@ -1287,27 +1291,24 @@ static void check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 	}
 }
 
-static void check_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type)
+static void check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
+							enum slab_type type)
 {
-	char *lhb;
-	offset o_lh, o_slab;
+	char b_lhb[GET_TYPE_SIZE(list_head)];
+	offset o_lhb, o_slab;
 	struct kmem_slab *slab;
 
-	printf("enumerating slab list %llx type %s\n", o_lhb,
+	printf("checking slab list %llx type %s\n", o_slabs,
 							slab_type_names[type]);
 
-	lhb = KDUMP_TYPE_ALLOC(list_head);
-
-	KDUMP_TYPE_GET(list_head, o_lhb, lhb);
-	list_head_for_each(o_lhb, lhb, o_lh) {
-		o_slab = o_lh - MEMBER_OFFSET(slab, list);
+	KDUMP_TYPE_GET(list_head, o_slabs, b_lhb);
+	list_head_for_each(o_slabs, b_lhb, o_lhb) {
+		o_slab = o_lhb - MEMBER_OFFSET(slab, list);
 //		printf("found slab: %llx\n", o_slab);
 		slab = init_kmem_slab(cachep, o_slab);
 		check_kmem_slab(cachep, slab, type);
 		free_kmem_slab(slab);
 	}
-
-	free(lhb);
 }
 
 static int init_kmem_array_cache(struct kmem_cache *cachep,
@@ -1369,15 +1370,14 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 	return 0;
 }
 
-/* Array of array_caches, such as kmem_cache.rray or *kmem_list3.alien */
-static int init_kmem_array_caches(struct kmem_cache *cachep, char * b_caches,
+/* Array of array_caches, such as kmem_cache.array or *kmem_list3.alien */
+static void init_kmem_array_caches(struct kmem_cache *cachep, char * b_caches,
 					int id1, int nr_ids, enum ac_type type)
 {
-	char *b_array_cache;
+	char b_array_cache[GET_TYPE_SIZE(array_cache)];
 	offset o_array_cache;
 	int id;
 
-	b_array_cache = KDUMP_TYPE_ALLOC(array_cache);
 	for (id = 0; id < nr_ids; id++, b_caches += GET_TYPE_SIZE(_voidp)) {
 		o_array_cache = kt_ptr_value(b_caches);
 		if (!o_array_cache)
@@ -1386,10 +1386,6 @@ static int init_kmem_array_caches(struct kmem_cache *cachep, char * b_caches,
 		init_kmem_array_cache(cachep, o_array_cache, b_array_cache,
 			type, id1, type == ac_shared ? -1 : id);
 	}
-	KDUMP_TYPE_FREE(b_array_cache);
-
-	return 0;
-
 }
 
 static void init_kmem_list3_arrays(struct kmem_cache *cachep, offset o_list3,
@@ -1435,8 +1431,6 @@ static void check_kmem_list3_slabs(struct kmem_cache *cachep, offset o_list3,
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
 	check_kmem_slabs(cachep, o_lhb, slab_free);
 }
-
-static int init_kmem_caches(void);
 
 static struct kmem_cache *init_kmem_cache(offset o_cache)
 {
@@ -1535,8 +1529,6 @@ static void check_kmem_cache(struct kmem_cache *cache)
 		check_kmem_list3_slabs(cache, o_nodelist, node);
 	}
 }
-
-static int check_slab_obj(offset obj);
 
 static int init_kmem_caches(void)
 {
