@@ -316,6 +316,7 @@ struct {
 		offset list;
 		offset nodelists;
 		offset num;
+		offset buffer_size;
 	} kmem_cache;
 
 	struct {
@@ -339,6 +340,7 @@ struct {
 		offset list;
 		offset inuse;
 		offset free;
+		offset s_mem;
 	} slab;
 
 	struct cpuinfo *cpu;
@@ -639,7 +641,7 @@ int kdump_types_init(int flags)
 	#define INIT_STRUCT_MEMBER__(sname,mname) kdump_type_member_init(types. sname ._origtype, #mname, &types. sname . mname)
 	do {
 		INIT_BASE_TYPE_(int,_int); 
-		INIT_BASE_TYPE_(long,_long); 
+		INIT_BASE_TYPE_(long,_long);
 		INIT_REF_TYPE_(void,_voidp); 
 
 		INIT_STRUCT(list_head); 
@@ -750,6 +752,7 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(kmem_cache, nodelists);
 		INIT_STRUCT_MEMBER(kmem_cache, num);
 		INIT_STRUCT_MEMBER(kmem_cache, array);
+		INIT_STRUCT_MEMBER(kmem_cache, buffer_size);
 
 		INIT_STRUCT(kmem_list3);
 		INIT_STRUCT_MEMBER(kmem_list3, slabs_partial);
@@ -767,6 +770,7 @@ int kdump_types_init(int flags)
 		INIT_STRUCT_MEMBER(slab, list);
 		INIT_STRUCT_MEMBER(slab, inuse);
 		INIT_STRUCT_MEMBER(slab, free);
+		INIT_STRUCT_MEMBER(slab, s_mem);
 		ret = 0;
 	} while(0);
 
@@ -1140,12 +1144,15 @@ struct kmem_cache {
 	const char *name;
 	unsigned int num;
 	htab_t obj_ac;
+	unsigned int buffer_size;
 };
 
 struct kmem_slab {
+	offset o_slab;
 	kmem_bufctl_t free;
 	unsigned int inuse;
-	enum slab_type type;
+	offset s_mem;
+	char *b_bufctl;
 };
 
 /* Cache of kmem_cache structs indexed by offset */
@@ -1187,20 +1194,44 @@ static int kmem_ac_eq(const void *obj, const void *off)
 	return (((struct kmem_obj_ac*)obj)->obj == *(offset *)off);
 }
 
-
-static int init_kmem_slab(struct kmem_cache *cachep, offset o_slab, char *b_slab, enum slab_type type);
-static int init_kmem_slab(struct kmem_cache *cachep, offset o_slab, char *b_slab, enum slab_type type)
+//TODO: have some hashtable-based cache as well?
+static struct kmem_slab *
+init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
 {
-	struct kmem_slab slab;
+	char b_slab[GET_TYPE_SIZE(slab)];
+	struct kmem_slab *slab;
+	offset o_bufctl = o_slab + GET_TYPE_SIZE(slab);
+	//FIXME: use kmem_bufctl_t, which didn't work in INIT_BASE_TYPE though
+	size_t bufctl_size = cachep->num * GET_TYPE_SIZE(_int);
+
+	KDUMP_TYPE_GET(slab, o_slab, b_slab);
+	slab = malloc(sizeof(struct kmem_slab));
+
+	slab->o_slab = o_slab;
+	slab->inuse = kt_int_value(b_slab + MEMBER_OFFSET(slab, inuse));
+	slab->free = kt_int_value(b_slab + MEMBER_OFFSET(slab, free));
+	slab->s_mem = kt_ptr_value(b_slab + MEMBER_OFFSET(slab, s_mem));
+
+	slab->b_bufctl = malloc(bufctl_size);
+	target_read_raw_memory(o_bufctl, (void *) slab->b_bufctl, bufctl_size);
+
+	return slab;
+}
+
+static void free_kmem_slab(struct kmem_slab *slab)
+{
+	free(slab->b_bufctl);
+	free(slab);
+}
+
+static void check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
+							enum slab_type type)
+{
 	unsigned int counted_free = 0;
-	char * b_bufctl = b_slab + GET_TYPE_SIZE(slab);
 	kmem_bufctl_t i;
+	offset o_slab = slab->o_slab;
 
-	slab.inuse = kt_int_value(b_slab + MEMBER_OFFSET(slab, inuse));
-	slab.free = kt_int_value(b_slab + MEMBER_OFFSET(slab, free));
-	slab.type = type;
-
-	i = slab.free;
+	i = slab->free;
 	while (i != BUFCTL_END) {
 		counted_free++;
 
@@ -1213,66 +1244,59 @@ static int init_kmem_slab(struct kmem_cache *cachep, offset o_slab, char *b_slab
 			break;
 		}
 
-		i = kt_int_value(b_bufctl + i*sizeof(kmem_bufctl_t));
+		i = kt_int_value(slab->b_bufctl + i*GET_TYPE_SIZE(_int));
 	}
 
-//	printf("slab inuse=%d cnt_free=%d num=%d\n", slab.inuse, counted_free,
+//	printf("slab inuse=%d cnt_free=%d num=%d\n", slab->inuse, counted_free,
 //								cachep->num);
 
-	if (slab.inuse + counted_free != cachep->num)
+	if (slab->inuse + counted_free != cachep->num)
 		 printf("slab %llx #objs mismatch: inuse=%d + cnt_free=%d != num=%d\n",
-				o_slab, slab.inuse, counted_free, cachep->num);
+				o_slab, slab->inuse, counted_free, cachep->num);
 
 	switch (type) {
 	case slab_partial:
-		if (!slab.inuse)
+		if (!slab->inuse)
 			printf("slab %llx has zero inuse but is on slabs_partial\n", o_slab);
-		else if (slab.inuse == cachep->num)
-			printf("slab %llx is full (%d) but is on slabs_partial\n", o_slab, slab.inuse);
+		else if (slab->inuse == cachep->num)
+			printf("slab %llx is full (%d) but is on slabs_partial\n", o_slab, slab->inuse);
 		break;
 	case slab_full:
-		if (!slab.inuse)
+		if (!slab->inuse)
 			printf("slab %llx has zero inuse but is on slabs_full\n", o_slab);
-		else if (slab.inuse < cachep->num)
-			printf("slab %llx has %d/%d inuse but is on slabs_full\n", o_slab, slab.inuse, cachep->num);
+		else if (slab->inuse < cachep->num)
+			printf("slab %llx has %d/%d inuse but is on slabs_full\n", o_slab, slab->inuse, cachep->num);
 		break;
 	case slab_free:
-		if (slab.inuse)
-			printf("slab %llx has %d/%d inuse but is on slabs_empty\n", o_slab, slab.inuse, cachep->num);
+		if (slab->inuse)
+			printf("slab %llx has %d/%d inuse but is on slabs_empty\n", o_slab, slab->inuse, cachep->num);
 		break;
 	default:
 		exit(1);
 	}
-
-	return 0;
 }
 
-static int init_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type);
 static int init_kmem_slabs(struct kmem_cache *cachep, offset o_lhb, enum slab_type type)
 {
-	char *lhb, *slab;
+	char *lhb;
 	offset o_lh, o_slab;
-	size_t bufctl_size = cachep->num * sizeof(kmem_bufctl_t);
+	struct kmem_slab *slab;
 
 	printf("enumerating slab list %llx type %s\n", o_lhb,
 							slab_type_names[type]);
 
 	lhb = KDUMP_TYPE_ALLOC(list_head);
-	slab = KDUMP_TYPE_ALLOC_EXTRA(slab, bufctl_size);
 
 	KDUMP_TYPE_GET(list_head, o_lhb, lhb);
 	list_head_for_each(o_lhb, lhb, o_lh) {
 		o_slab = o_lh - MEMBER_OFFSET(slab, list);
 //		printf("found slab: %llx\n", o_slab);
-		if (KDUMP_TYPE_GET_EXTRA(slab, o_slab, slab, bufctl_size)) {
-			fprintf(stderr, "could not type_get\n");
-			continue;
-		}
-		init_kmem_slab(cachep, o_slab, slab, type);
+		slab = init_kmem_slab(cachep, o_slab);
+		check_kmem_slab(cachep, slab, type);
+		free_kmem_slab(slab);
 	}
 
 	free(lhb);
-	free(slab);
 
 	return 0;
 }
@@ -1578,7 +1602,7 @@ static struct page virt_to_head_page(offset addr)
 static int check_slab_obj(offset obj)
 {
 	struct page page;
-	offset o_cache;
+	offset o_cache, o_slab;
 	struct kmem_cache *cachep;
 	struct kmem_obj_ac *obj_ac;
 	struct kmem_ac *ac;
@@ -1588,8 +1612,10 @@ static int check_slab_obj(offset obj)
 	if (!PageSlab(page))
 		return 0;
 
-	printf("object %llx is on slab:\n", obj);
 	o_cache = page.lru.next;
+	o_slab = page.lru.prev;
+	printf("object %llx is on slab %llx of cache %llx\n", obj, o_slab,
+								o_cache);
 
 	cachep = init_kmem_cache(o_cache);
 
