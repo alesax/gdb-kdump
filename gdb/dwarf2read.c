@@ -2499,7 +2499,7 @@ dwarf2_get_dwz_file (void)
     }
 
   if (dwz_bfd == NULL)
-    dwz_bfd = build_id_to_debug_bfd (buildid_len, buildid);
+    dwz_bfd = build_id_to_debug_bfd (buildid_len, buildid, NULL, 1);
 
   if (dwz_bfd == NULL)
     error (_("could not find '.gnu_debugaltlink' file for %s"),
