@@ -1801,6 +1801,7 @@ message == an error message without a stack will be printed."),
       || gdbpy_initialize_commands () < 0
       || gdbpy_initialize_symbols () < 0
       || gdbpy_initialize_symtabs () < 0
+      || gdbpy_initialize_sections () < 0
       || gdbpy_initialize_blocks () < 0
       || gdbpy_initialize_functions () < 0
       || gdbpy_initialize_parameters () < 0
