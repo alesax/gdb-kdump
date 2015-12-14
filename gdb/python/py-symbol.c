@@ -408,11 +408,15 @@ pysym_lookup_symbol(symbol_object *sym_obj, const char *name, int domain,
       END_CATCH
     }
 
-  TRY_CATCH (except, RETURN_MASK_ALL)
+  TRY
     {
       symbol = lookup_symbol (name, block, domain, &is_a_field_of_this);
     }
-  GDB_PY_SET_HANDLE_EXCEPTION (except);
+  CATCH (except, RETURN_MASK_ALL)
+    {
+      GDB_PY_SET_HANDLE_EXCEPTION (except);
+    }
+  END_CATCH
 
   if (symbol) {
     set_symbol (sym_obj, symbol);
@@ -489,11 +493,15 @@ pysym_lookup_symbol_global(symbol_object *sym_obj, const char *name,
   if (block_obj)
     block = block_object_to_block (block_obj);
 
-  TRY_CATCH (except, RETURN_MASK_ALL)
+  TRY
     {
-      symbol = lookup_symbol_global (name, block, domain);
+      symbol = lookup_global_symbol (name, block, domain);
     }
-  GDB_PY_SET_HANDLE_EXCEPTION (except);
+  CATCH (except, RETURN_MASK_ALL)
+    {
+      GDB_PY_SET_HANDLE_EXCEPTION (except);
+    }
+  END_CATCH
 
   if (symbol)
     set_symbol(sym_obj, symbol);
