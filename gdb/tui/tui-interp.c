@@ -31,6 +31,7 @@
 #include "tui/tui-io.h"
 #include "infrun.h"
 #include "observer.h"
+#include "symfile.h"
 
 static struct ui_out *tui_ui_out (struct interp *self);
 
