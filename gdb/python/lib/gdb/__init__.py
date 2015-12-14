@@ -163,3 +163,9 @@ def GdbSetPythonDirectory(dir):
     # attributes
     reload(__import__(__name__))
     auto_load_packages()
+
+def lookup_symbol(*args, **kws):
+    return Symbol(*args, **kws)
+
+def lookup_global_symbol(*args, **kws):
+    return Symbol(*args, **kws)

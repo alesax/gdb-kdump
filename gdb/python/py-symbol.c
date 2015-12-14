@@ -34,6 +34,7 @@ typedef struct sympy_symbol_object {
      deleted.  */
   struct sympy_symbol_object *prev;
   struct sympy_symbol_object *next;
+  int field_of_type;
 } symbol_object;
 
 /* Require a valid symbol.  All access to symbol_object->symbol should be
@@ -377,6 +378,49 @@ sympy_dealloc (PyObject *obj)
   sym_obj->symbol = NULL;
 }
 
+
+static int
+pysym_lookup_symbol(symbol_object *sym_obj, const char *name, int domain,
+		    PyObject *block_obj)
+{
+  const struct block *block = NULL;
+  struct field_of_this_result is_a_field_of_this;
+  struct symbol *symbol = NULL;
+
+  if (block_obj)
+    block = block_object_to_block (block_obj);
+
+  if (!block)
+    {
+      struct frame_info *selected_frame;
+
+      TRY
+	{
+	  if (symbol && symbol_read_needs_frame(symbol)) {
+	      selected_frame = get_selected_frame (_("No frame selected."));
+	      block = get_frame_block (selected_frame, NULL);
+	    }
+	}
+      CATCH (except, RETURN_MASK_ALL)
+       {
+         GDB_PY_SET_HANDLE_EXCEPTION (except);
+       }
+      END_CATCH
+    }
+
+  TRY_CATCH (except, RETURN_MASK_ALL)
+    {
+      symbol = lookup_symbol (name, block, domain, &is_a_field_of_this);
+    }
+  GDB_PY_SET_HANDLE_EXCEPTION (except);
+
+  if (symbol) {
+    set_symbol (sym_obj, symbol);
+    sym_obj->field_of_type = (is_a_field_of_this.type != NULL);
+  }
+  return 0;
+}
+
 /* Implementation of
    gdb.lookup_symbol (name [, block] [, domain]) -> (symbol, is_field_of_this)
    A tuple with 2 elements is always returned.  The first is the symbol
@@ -391,70 +435,70 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
   const char *name;
   static char *keywords[] = { "name", "block", "domain", NULL };
   struct symbol *symbol = NULL;
-  PyObject *block_obj = NULL, *ret_tuple, *sym_obj, *bool_obj;
+  PyObject *block_obj = NULL, *ret_tuple, *sym_pyobj = NULL, *bool_obj;
   const struct block *block = NULL;
+  symbol_object *sym_obj = NULL;
 
   if (! PyArg_ParseTupleAndKeywords (args, kw, "s|O!i", keywords, &name,
 				     &block_object_type, &block_obj, &domain))
     return NULL;
 
-  if (block_obj)
-    block = block_object_to_block (block_obj);
+  sym_obj = PyObject_New (symbol_object, &symbol_object_type);
+  if (!sym_obj)
+    return NULL;
 
-  TRY
-    {
-      symbol = lookup_symbol (name, block, domain, &is_a_field_of_this);
-    }
-  CATCH (except, RETURN_MASK_ALL)
-    {
-      GDB_PY_HANDLE_EXCEPTION (except);
-    }
-   END_CATCH
-
-  if (!block)
-    {
-      struct frame_info *selected_frame;
-
-      TRY
-	{
-	  if (symbol && symbol_read_needs_frame(symbol)) {
-	    selected_frame = get_selected_frame (_("No frame selected."));
-	    block = get_frame_block (selected_frame, NULL);
- 	  }
-	}
-      CATCH (except, RETURN_MASK_ALL)
-	{
-	  GDB_PY_HANDLE_EXCEPTION (except);
-	}
-      END_CATCH
-    }
-
+  sym_pyobj = (PyObject *)sym_obj;
 
   ret_tuple = PyTuple_New (2);
   if (!ret_tuple)
-    return NULL;
-
-  if (symbol)
     {
-      sym_obj = symbol_to_symbol_object (symbol);
-      if (!sym_obj)
-	{
-	  Py_DECREF (ret_tuple);
-	  return NULL;
-	}
+      Py_DECREF (sym_pyobj);
+      return NULL;
     }
-  else
+
+  if (pysym_lookup_symbol(sym_obj, name, domain, block_obj) < 0)
     {
-      sym_obj = Py_None;
+      Py_DECREF (sym_pyobj);
+      Py_DECREF (ret_tuple);
+      return NULL;
+    }
+
+  if (!sym_obj->symbol)
+    {
+      Py_DECREF (sym_pyobj);
       Py_INCREF (Py_None);
+      sym_pyobj = Py_None;
+      sym_obj = NULL;
     }
-  PyTuple_SET_ITEM (ret_tuple, 0, sym_obj);
+  PyTuple_SET_ITEM (ret_tuple, 0, sym_pyobj);
 
-  bool_obj = (is_a_field_of_this.type != NULL) ? Py_True : Py_False;
-  Py_INCREF (bool_obj);
-  PyTuple_SET_ITEM (ret_tuple, 1, bool_obj);
+  bool_obj = (sym_obj && sym_obj->field_of_type) ? Py_True : Py_False;
+  Py_INCREF(bool_obj);
+  PyTuple_SET_ITEM(ret_tuple, 1, bool_obj);
 
   return ret_tuple;
+}
+
+static int
+pysym_lookup_symbol_global(symbol_object *sym_obj, const char *name,
+			   int domain, PyObject *block_obj)
+{
+  const struct block *block = NULL;
+  struct symbol *symbol = NULL;
+
+  if (block_obj)
+    block = block_object_to_block (block_obj);
+
+  TRY_CATCH (except, RETURN_MASK_ALL)
+    {
+      symbol = lookup_symbol_global (name, block, domain);
+    }
+  GDB_PY_SET_HANDLE_EXCEPTION (except);
+
+  if (symbol)
+    set_symbol(sym_obj, symbol);
+
+  return 0;
 }
 
 /* Implementation of
@@ -467,35 +511,30 @@ gdbpy_lookup_global_symbol (PyObject *self, PyObject *args, PyObject *kw)
   const char *name;
   static char *keywords[] = { "name", "domain", NULL };
   struct symbol *symbol = NULL;
-  PyObject *sym_obj;
+  symbol_object *sym_obj;
 
   if (! PyArg_ParseTupleAndKeywords (args, kw, "s|i", keywords, &name,
 				     &domain))
     return NULL;
 
-  TRY
-    {
-      symbol = lookup_global_symbol (name, NULL, domain);
-    }
-  CATCH (except, RETURN_MASK_ALL)
-    {
-      GDB_PY_HANDLE_EXCEPTION (except);
-    }
-  END_CATCH
+  sym_obj = PyObject_New (symbol_object, &symbol_object_type);
+  if (!sym_obj)
+    return NULL;
 
-  if (symbol)
+  if (pysym_lookup_symbol_global(sym_obj, name, domain, NULL) < 0)
     {
-      sym_obj = symbol_to_symbol_object (symbol);
-      if (!sym_obj)
-	return NULL;
+      Py_DECREF(sym_obj);
+      return NULL;
     }
-  else
+
+  if (!sym_obj->symbol)
     {
-      sym_obj = Py_None;
+      Py_DECREF (sym_obj);
       Py_INCREF (Py_None);
+      return Py_None;
     }
 
-  return sym_obj;
+  return (PyObject *)sym_obj;
 }
 
 /* This function is called when an objfile is about to be freed.
@@ -580,6 +619,52 @@ gdbpy_initialize_symbols (void)
 				 (PyObject *) &symbol_object_type);
 }
 
+static PyObject *
+symbol_object_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+  symbol_object *self = (symbol_object *)type->tp_alloc(type, 0);
+  if (self)
+    {
+      self->symbol = NULL;
+      self->prev = NULL;
+      self->next = NULL;
+      self->field_of_type = 0;
+    }
+
+  return self;
+}
+
+static int
+symbol_object_init(PyObject *self, PyObject *args, PyObject *kwds)
+{
+  int domain = VAR_DOMAIN;
+  const char *name;
+  PyObject *block_obj = NULL, *bool_obj = NULL;
+  int global = 1;
+  symbol_object *sym_obj = (symbol_object *)self;
+  int ret;
+
+  static char *keywords[] = {"name", "global", "domain", "block", NULL};
+
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|O!iO!", keywords, &name,
+				   &PyBool_Type, &bool_obj, &block_object_type,
+				   &block_obj, &domain))
+    return -1;
+
+  if (bool_obj)
+    global = (bool_obj == Py_True);
+
+  if (global)
+    ret = pysym_lookup_symbol_global(sym_obj, name, domain, block_obj);
+  else
+    ret = pysym_lookup_symbol(sym_obj, name, domain, block_obj);
+
+  if (ret < 0 || !sym_obj->symbol)
+    return -1;
+
+  return 0;
+}
+
 
 
 static PyGetSetDef symbol_object_getset[] = {
@@ -626,33 +711,14 @@ Return the value of the symbol." },
 
 PyTypeObject symbol_object_type = {
   PyVarObject_HEAD_INIT (NULL, 0)
-  "gdb.Symbol",			  /*tp_name*/
-  sizeof (symbol_object),	  /*tp_basicsize*/
-  0,				  /*tp_itemsize*/
-  sympy_dealloc,		  /*tp_dealloc*/
-  0,				  /*tp_print*/
-  0,				  /*tp_getattr*/
-  0,				  /*tp_setattr*/
-  0,				  /*tp_compare*/
-  0,				  /*tp_repr*/
-  0,				  /*tp_as_number*/
-  0,				  /*tp_as_sequence*/
-  0,				  /*tp_as_mapping*/
-  0,				  /*tp_hash */
-  0,				  /*tp_call*/
-  sympy_str,			  /*tp_str*/
-  0,				  /*tp_getattro*/
-  0,				  /*tp_setattro*/
-  0,				  /*tp_as_buffer*/
-  Py_TPFLAGS_DEFAULT,		  /*tp_flags*/
-  "GDB symbol object",		  /*tp_doc */
-  0,				  /*tp_traverse */
-  0,				  /*tp_clear */
-  0,				  /*tp_richcompare */
-  0,				  /*tp_weaklistoffset */
-  0,				  /*tp_iter */
-  0,				  /*tp_iternext */
-  symbol_object_methods,	  /*tp_methods */
-  0,				  /*tp_members */
-  symbol_object_getset		  /*tp_getset */
+  .tp_name = "gdb.Symbol",
+  .tp_basicsize = sizeof (symbol_object),
+  .tp_dealloc = sympy_dealloc,
+  .tp_str = sympy_str,
+  .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
+  .tp_doc = "GDB symbol object",
+  .tp_methods = symbol_object_methods,
+  .tp_getset = symbol_object_getset,
+  .tp_init = symbol_object_init,
+  .tp_new = symbol_object_new,
 };
