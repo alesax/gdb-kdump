@@ -382,21 +382,6 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
 
   if (block_obj)
     block = block_object_to_block (block_obj);
-  else
-    {
-      struct frame_info *selected_frame;
-
-      TRY
-	{
-	  selected_frame = get_selected_frame (_("No frame selected."));
-	  block = get_frame_block (selected_frame, NULL);
-	}
-      CATCH (except, RETURN_MASK_ALL)
-	{
-	  GDB_PY_HANDLE_EXCEPTION (except);
-	}
-      END_CATCH
-    }
 
   TRY
     {
@@ -408,6 +393,24 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
       GDB_PY_HANDLE_EXCEPTION (except);
     }
   END_CATCH
+
+  if (symbol && !block)
+    {
+      struct frame_info *selected_frame;
+
+      TRY
+	{
+	  if (symbol_read_needs_frame(symbol)) {
+	    selected_frame = get_selected_frame (_("No frame selected."));
+	    block = get_frame_block (selected_frame, NULL);
+	  }
+	}
+      CATCH (except, RETURN_MASK_ALL)
+	{
+	  GDB_PY_HANDLE_EXCEPTION (except);
+	}
+      END_CATCH
+    }
 
   ret_tuple = PyTuple_New (2);
   if (!ret_tuple)
