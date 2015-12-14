@@ -587,6 +587,7 @@ build_id_to_debug_bfd (size_t build_id_len, const bfd_byte *build_id,
 	  if (abfd == NULL)
 	    {
 	      xfree (filename);
+	      filename = NULL;
 	      continue;
 	    }
 
