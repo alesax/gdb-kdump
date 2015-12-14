@@ -1259,9 +1259,10 @@ elf_symfile_read (struct objfile *objfile, int symfile_flags)
 	   && objfile->separate_debug_objfile == NULL
 	   && objfile->separate_debug_objfile_backlink == NULL)
     {
-      char *debugfile;
+      char *debugfile, *build_id_filename;
 
-      debugfile = find_separate_debug_file_by_buildid (objfile);
+      debugfile = find_separate_debug_file_by_buildid (objfile,
+						       &build_id_filename);
 
       if (debugfile == NULL)
 	debugfile = find_separate_debug_file_by_debuglink (objfile);
@@ -1275,6 +1276,12 @@ elf_symfile_read (struct objfile *objfile, int symfile_flags)
 	  symbol_file_add_separate (abfd, debugfile, symfile_flags, objfile);
 	  do_cleanups (cleanup);
 	}
+      /* Check if any separate debug info has been extracted out.  */
+      else if (bfd_get_section_by_name (objfile->obfd, ".gnu_debuglink")
+	       != NULL)
+	debug_print_missing (objfile_name (objfile), build_id_filename);
+
+      xfree (build_id_filename);
     }
 }
 

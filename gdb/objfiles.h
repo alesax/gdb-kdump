@@ -489,6 +489,10 @@ struct objfile
 
 #define OBJF_NOT_FILENAME (1 << 6)
 
+/* This file was loaded according to the BUILD_ID_CORE_LOADS rules.  */
+
+#define OBJF_BUILD_ID_CORE_LOADED (1 << 12)
+
 /* Declarations for functions defined in objfiles.c */
 
 extern struct objfile *allocate_objfile (bfd *, const char *name, int);

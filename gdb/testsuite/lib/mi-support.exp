@@ -205,6 +205,17 @@ proc default_mi_gdb_start { args } {
 	}
     }
 
+    # Turn off the missing warnings as the testsuite does not expect it.
+    send_gdb "190-gdb-set build-id-verbose 0\n"
+    gdb_expect 10 {
+	-re ".*190-gdb-set build-id-verbose 0\r\n190\\\^done\r\n$mi_gdb_prompt$" {
+	    verbose "Disabled the missing debug infos warnings." 2
+	}
+	timeout {
+	    warning "Could not disable the missing debug infos warnings.."
+	}
+    }
+
     # Create the new PTY for the inferior process.
     if { $separate_inferior_pty } {
 	spawn -pty
