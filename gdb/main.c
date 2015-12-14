@@ -434,6 +434,35 @@ typedef struct cmdarg {
 /* Define type VEC (cmdarg_s).  */
 DEF_VEC_O (cmdarg_s);
 
+/* Call exec_file_attach.  If it detected FILENAME is a core file call
+   core_file_command.  Print the original exec_file_attach error only if
+   core_file_command failed to find a matching executable.  */
+
+static void
+exec_or_core_file_attach (const char *filename, int from_tty)
+{
+  gdb_assert (exec_bfd == NULL);
+
+  TRY
+    {
+      exec_file_attach (filename, from_tty);
+    }
+  CATCH (e, RETURN_MASK_ALL)
+    {
+      if (e.error == IS_CORE_ERROR)
+	{
+	  core_file_command ((char *) filename, from_tty);
+
+	  /* Iff the core file found its executable suppress the error message
+	     from exec_file_attach.  */
+	  if (exec_bfd != NULL)
+	    return;
+	}
+      throw_exception (e);
+    }
+  END_CATCH
+}
+
 static int
 captured_main (void *data)
 {
@@ -888,6 +917,8 @@ captured_main (void *data)
 	{
 	  symarg = argv[optind];
 	  execarg = argv[optind];
+	  if (optind + 1 == argc && corearg == NULL)
+	    corearg = argv[optind];
 	  optind++;
 	}
 
@@ -1045,11 +1076,25 @@ captured_main (void *data)
       && symarg != NULL
       && strcmp (execarg, symarg) == 0)
     {
+      catch_command_errors_const_ftype *func;
+
+      /* Call exec_or_core_file_attach only if the file was specified as
+	 a command line argument (and not an a command line option).  */
+      if (corearg != NULL && strcmp (corearg, execarg) == 0)
+	{
+	  func = exec_or_core_file_attach;
+	  corearg = NULL;
+	}
+      else
+	func = exec_file_attach;
+
       /* The exec file and the symbol-file are the same.  If we can't
          open it, better only print one error message.
-         catch_command_errors returns non-zero on success!  */
-      if (catch_command_errors_const (exec_file_attach, execarg,
-				      !batch_flag))
+         catch_command_errors returns non-zero on success!
+	 Do not load EXECARG as a symbol file if it has been already processed
+	 as a core file.  */
+      if (catch_command_errors_const (func, execarg, !batch_flag)
+	  && core_bfd == NULL)
 	catch_command_errors_const (symbol_file_add_main, symarg,
 				    !batch_flag);
     }
