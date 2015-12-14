@@ -37,6 +37,7 @@
 #include "gdbcmd.h"		/* for dont_repeat() */
 #include "annotate.h"
 #include "maint.h"
+#include "symfile.h"
 
 /* readline include files.  */
 #include "readline/readline.h"
@@ -180,6 +181,8 @@ rl_callback_read_char_wrapper (gdb_client_data client_data)
 void
 cli_command_loop (void *data)
 {
+  debug_flush_missing ();
+
   display_gdb_prompt (0);
 
   /* Now it's time to start the event loop.  */
@@ -297,6 +300,8 @@ display_gdb_prompt (const char *new_prompt)
 
   /* Reset the nesting depth used when trace-commands is set.  */
   reset_command_nest_depth ();
+
+  debug_flush_missing ();
 
   old_chain = make_cleanup (free_current_contents, &actual_gdb_prompt);
 

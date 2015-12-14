@@ -1564,7 +1564,7 @@ proc default_gdb_start { } {
 	    warning "Couldn't set the width to 0."
 	}
     }
-    # Turn off the missing warnings as the testsuite does not expect it.
+    # Turn off the missing RPMs warnings as the testsuite does not expect it.
     send_gdb "set build-id-verbose 0\n"
     gdb_expect 10 {
 	-re "$gdb_prompt $" {
