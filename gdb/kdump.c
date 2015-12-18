@@ -1202,8 +1202,35 @@ static int kmem_ac_eq(const void *obj, const void *off)
 	return (((struct kmem_obj_ac*)obj)->obj == *(offset *)off);
 }
 
+//FIXME: support the CONFIG_PAGEFLAGS_EXTENDED variant?
+#define PageTail(page)	(page.flags & 1UL << PG_tail)
+#define PageSlab(page)	(page.flags & 1UL << PG_slab)
+
+//TODO: get this via libkdumpfile somehow?
+#define VMEMMAP_START	0xffffea0000000000UL
+#define PAGE_SHIFT	12
+
+static offset pfn_to_page_memmap(unsigned long pfn)
+{
+	return VMEMMAP_START + pfn*GET_TYPE_SIZE(page);
+}
+
+//TODO: once the config querying below works, support all variants
+#define pfn_to_page(pfn) pfn_to_page_memmap(pfn)
+
+static kdump_paddr_t transform_memory(kdump_paddr_t addr);
+
+static unsigned long addr_to_pfn(offset addr)
+{
+	kdump_paddr_t pa = transform_memory(addr);
+
+	return pa >> PAGE_SHIFT;
+}
+
+#define virt_to_opage(addr)	pfn_to_page(addr_to_pfn(addr))
 static int check_slab_obj(offset obj);
 static int init_kmem_caches(void);
+static struct page virt_to_head_page(offset addr);
 
 
 //TODO: have some hashtable-based cache as well?
@@ -1250,6 +1277,9 @@ check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 	unsigned int counted_free = 0;
 	kmem_bufctl_t i;
 	offset o_slab = slab->o_slab;
+	offset o_obj, o_prev_obj = 0;
+	struct page page;
+	offset o_page_cache, o_page_slab;
 
 	i = slab->free;
 	while (i != BUFCTL_END) {
@@ -1295,6 +1325,28 @@ check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 		exit(1);
 	}
 
+	for (i = 0; i < cachep->num; i++) {
+		o_obj = slab->s_mem + i * cachep->buffer_size;
+		if (o_prev_obj >> PAGE_SHIFT == o_obj >> PAGE_SHIFT)
+			continue;
+
+		o_prev_obj = o_obj;
+		page = virt_to_head_page(o_obj);
+		if (!PageSlab(page))
+			warning(_("slab %llx object %llx is not on PageSlab page\n"),
+					o_slab, o_obj);
+		o_page_cache = page.lru.next;
+		o_page_slab = page.lru.prev;
+
+		if (o_page_cache != cachep->o_cache)
+			warning(_("cache %llx (%s) object %llx is on page where lru.next points to %llx and not the cache\n"),
+					cachep->o_cache, cachep->name, o_obj,
+					o_page_cache);
+		if (o_page_slab != o_slab)
+			warning(_("slab %llx object %llx is on page where lru.prev points to %llx and not the slab\n"),
+					o_slab, o_obj, o_page_slab);
+	}
+
 	return counted_free;
 }
 
@@ -1307,18 +1359,56 @@ check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 	struct kmem_slab *slab;
 	unsigned long counted_free = 0;
 
-	printf("checking slab list %llx type %s\n", o_slabs,
-							slab_type_names[type]);
+//	printf("checking slab list %llx type %s\n", o_slabs,
+//							slab_type_names[type]);
 
 	list_head_for_each(o_slabs, b_lhb, o_lhb) {
 		o_slab = o_lhb - MEMBER_OFFSET(slab, list);
-//		printf("found slab: %llx\n", o_slab);
+		printf("found slab: %llx\n", o_slab);
 		slab = init_kmem_slab(cachep, o_slab);
 		counted_free += check_kmem_slab(cachep, slab, type);
 		free_kmem_slab(slab);
 	}
 
 	return counted_free;
+}
+
+/* Check that o_obj points to an object on slab of kmem_cache */
+static void check_kmem_obj(struct kmem_cache *cachep, offset o_obj)
+{
+	struct page page;
+	offset o_cache, o_slab;
+	offset obj_base;
+	unsigned int idx;
+	struct kmem_slab *slabp;
+
+	page = virt_to_head_page(o_obj);
+
+	if (!PageSlab(page))
+		warning(_("object %llx is not on PageSlab page\n"), o_obj);
+
+	o_cache = page.lru.next;
+	if (o_cache != cachep->o_cache)
+		warning(_("object %llx is on page that should belong to cache "
+				"%llx (%s), but lru.next points to %llx\n"),
+				o_obj, cachep->o_cache, cachep->name, o_obj);
+
+	o_slab = page.lru.prev;
+	slabp = init_kmem_slab(cachep, o_slab);
+
+	//TODO: kernel implementation uses reciprocal_divide, check?
+	idx = (o_obj - slabp->s_mem) / cachep->buffer_size;
+	obj_base = slabp->s_mem + idx * cachep->buffer_size;
+
+	if (obj_base != o_obj)
+		warning(_("pointer %llx should point to beginning of object "
+				"but object's address is %llx\n"), o_obj,
+				obj_base);
+
+	if (idx >= cachep->num)
+		warning(_("object %llx has index %u, but there should be only "
+				"%u objects on slabs of cache %llx"),
+				o_obj, idx, cachep->num, cachep->o_cache);
 }
 
 static int init_kmem_array_cache(struct kmem_cache *cachep,
@@ -1336,9 +1426,9 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 	avail = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, avail));
 	limit = kt_int_value(b_array_cache + MEMBER_OFFSET(array_cache, limit));
 
-	printf("found %s[%d,%d] array_cache %llx\n", ac_type_names[type],
-						id1, id2, o_array_cache);
-	printf("avail=%u limit=%u entries=%llx\n", avail, limit, o_entries);
+//	printf("found %s[%d,%d] array_cache %llx\n", ac_type_names[type],
+//						id1, id2, o_array_cache);
+//	printf("avail=%u limit=%u entries=%llx\n", avail, limit, o_entries);
 
 	if (avail > limit)
 		printf("array_cache %llx has avail=%d > limit=%d\n",
@@ -1373,6 +1463,8 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 		obj_ac->ac = ac;
 
 		*slot = obj_ac;
+
+		check_kmem_obj(cachep, o_obj);
 	}
 
 	free(b_entries);
@@ -1515,7 +1607,7 @@ static void init_kmem_cache_arrays(struct kmem_cache *cache)
 		o_nodelist = kt_ptr_value(b_nodelists);
 		if (!o_nodelist)
 			continue;
-		printf("found nodelist[%d] %llx\n", node, o_nodelist);
+//		printf("found nodelist[%d] %llx\n", node, o_nodelist);
 		init_kmem_list3_arrays(cache, o_nodelist, node);
 	}
 
@@ -1544,7 +1636,7 @@ static void check_kmem_cache(struct kmem_cache *cache)
 		o_nodelist = kt_ptr_value(b_nodelists);
 		if (!o_nodelist)
 			continue;
-		printf("found nodelist[%d] %llx\n", node, o_nodelist);
+//		printf("found nodelist[%d] %llx\n", node, o_nodelist);
 		check_kmem_list3_slabs(cache, o_nodelist, node);
 	}
 }
@@ -1615,32 +1707,8 @@ static void check_kmem_caches(void)
 	}
 }
 
-static kdump_paddr_t transform_memory(kdump_paddr_t addr);
 
-//TODO: get this via libkdumpfile somehow?
-#define VMEMMAP_START	0xffffea0000000000UL
-#define PAGE_SHIFT	12
 
-static offset pfn_to_page_memmap(unsigned long pfn)
-{
-	return VMEMMAP_START + pfn*GET_TYPE_SIZE(page);
-}
-
-//TODO: once the config querying below works, support all variants
-#define pfn_to_page(pfn) pfn_to_page_memmap(pfn)
-
-static unsigned long addr_to_pfn(offset addr)
-{
-	kdump_paddr_t pa = transform_memory(addr);
-
-	return pa >> PAGE_SHIFT;
-}
-
-#define virt_to_opage(addr)	pfn_to_page(addr_to_pfn(addr))
-
-//FIXME: support the CONFIG_PAGEFLAGS_EXTENDED variant?
-#define PageTail(page)	(page.flags & 1UL << PG_tail)
-#define PageSlab(page)	(page.flags & 1UL << PG_slab)
 
 static struct page read_page(offset o_page)
 {
