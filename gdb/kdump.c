@@ -899,7 +899,7 @@ static void list_next(struct list_iter *iter)
 }
 
 #define list_for_each(iter, o_head) \
-	for (list_first(iter, o_head); (iter)->cont; list_next(iter))
+	for (list_first(&(iter), o_head); (iter).cont; list_next(&(iter)))
 
 int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data)
 {
@@ -1476,7 +1476,7 @@ check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 	printf("checking slab list %llx type %s\n", o_slabs,
 							slab_type_names[type]);
 
-	list_for_each(&iter, o_slabs) {
+	list_for_each(iter, o_slabs) {
 		o_slab = iter.curr - MEMBER_OFFSET(slab, list);
 		printf("found slab: %llx\n", o_slab);
 		slab = init_kmem_slab(cachep, o_slab);
@@ -1757,8 +1757,8 @@ static void check_kmem_cache(struct kmem_cache *cache)
 
 static int init_kmem_caches(void)
 {
-	offset o_lh, o_kmem_cache;
-	char lhb[GET_TYPE_SIZE(list_head)];
+	offset o_kmem_cache;
+	struct list_iter iter;
 	offset o_nr_node_ids, o_nr_cpu_ids;
 
 	kmem_cache_cache = htab_create_alloc(64, kmem_cache_hash,
@@ -1792,8 +1792,8 @@ static int init_kmem_caches(void)
 		printf("nr_node_ids = %d\n", nr_node_ids);
 	}
 
-	list_head_for_each(o_slab_caches, lhb, o_lh) {
-		o_kmem_cache = o_lh - MEMBER_OFFSET(kmem_cache,list);
+	list_for_each(iter, o_slab_caches) {
+		o_kmem_cache = iter.curr - MEMBER_OFFSET(kmem_cache,list);
 		printf("found kmem cache: %llx\n", o_kmem_cache);
 
 		init_kmem_cache(o_kmem_cache);
@@ -1805,14 +1805,14 @@ static int init_kmem_caches(void)
 static void check_kmem_caches(void)
 {
 	offset o_lhb, o_kmem_cache;
-	char b_lhb[GET_TYPE_SIZE(list_head)];
+	struct list_iter iter;
 	struct kmem_cache *cache;
 
 	if (!kmem_cache_cache)
 		init_kmem_caches();
 
-	list_head_for_each(o_slab_caches, b_lhb, o_lhb) {
-		o_kmem_cache = o_lhb - MEMBER_OFFSET(kmem_cache,list);
+	list_for_each(iter, o_slab_caches) {
+		o_kmem_cache = iter.curr - MEMBER_OFFSET(kmem_cache,list);
 
 		cache = init_kmem_cache(o_kmem_cache);
 		if (strcmp("names_cache", cache->name))
