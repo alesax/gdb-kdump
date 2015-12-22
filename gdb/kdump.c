@@ -796,6 +796,29 @@ struct list_iter {
 	int error;
 };
 
+static void list_first_from(struct list_iter *iter, offset o_head)
+{
+	char b_head[GET_TYPE_SIZE(list_head)];
+
+	iter->fast = 0;
+	iter->error = 0;
+	iter->cont = 1;
+
+	if (KDUMP_TYPE_GET(list_head, o_head, b_head)) {
+		warning(_("Could not read list_head %llx in list_first()\n"),
+								o_head);
+		iter->error = 1;
+		iter->cont = 0;
+		return;
+	}
+
+	iter->curr = o_head;
+	iter->last = kt_ptr_value(b_head + MEMBER_OFFSET(list_head, prev));
+
+	iter->head = o_head;
+	iter->prev = iter->last;
+}
+
 static void list_first(struct list_iter *iter, offset o_head)
 {
 	char b_head[GET_TYPE_SIZE(list_head)];
@@ -900,6 +923,9 @@ static void list_next(struct list_iter *iter)
 
 #define list_for_each(iter, o_head) \
 	for (list_first(&(iter), o_head); (iter).cont; list_next(&(iter)))
+
+#define list_for_each_from(iter, o_head) \
+	for (list_first_from(&(iter), o_head); (iter).cont; list_next(&(iter)))
 
 int kt_hlist_head_for_each_node (char *addr, int(*func)(void *,offset), void *data)
 {
@@ -1978,8 +2004,8 @@ static int init_values(void)
 {
 	struct symbol *s;
 	char *b = NULL, *init_task = NULL, *task = NULL;
-	offset off, off_task, rsp, rip, _rsp;
-	offset tasks;
+	offset off, o_task, rsp, rip, _rsp;
+	offset o_tasks;
 	offset stack;
 	offset o_init_task;
 	int state;
@@ -1989,7 +2015,7 @@ static int init_values(void)
 	int cnt = 0;
 	int pid_reserve;
 	struct task_info *task_info;
-	char lhb[GET_TYPE_SIZE(list_head)];
+	struct list_iter iter;
 
 	s = NULL;
 	
@@ -2023,57 +2049,43 @@ static int init_values(void)
 		goto error;
 	task = KDUMP_TYPE_ALLOC(task_struct);
 	if (!task) goto error;
-	if (KDUMP_TYPE_GET(task_struct, o_init_task, init_task)) 
-		goto error;
-	tasks = kt_ptr_value(init_task + MEMBER_OFFSET(task_struct,tasks));
+	o_tasks = o_init_task + MEMBER_OFFSET(task_struct, tasks);
 
 	i = 0;
-	off = 0;
 	pid_reserve = 50000;
 
 	print_thread_events = 0;
 	in = current_inferior();
 	inferior_appeared (in, 1);
 
-	list_head_for_each(tasks, lhb, off) {
-		
+	list_for_each_from(iter, o_tasks) {
+
 		struct thread_info *info;
 		int pid;
 		ptid_t tt;
 		struct regcache *rc;
 		long long val;
-		offset main_tasks, mt;
-		
+		struct list_iter iter_thr;
+		offset o_threads;
 
-		off_task = off - MEMBER_OFFSET(task_struct,tasks);
-		if (KDUMP_TYPE_GET(task_struct, off_task, task)) continue;
+		o_task = iter.curr - MEMBER_OFFSET(task_struct, tasks);
+		o_threads = o_task + MEMBER_OFFSET(task_struct, thread_group);
+		list_for_each_from(iter_thr, o_threads) {
 
-		main_tasks = off_task;//kt_ptr_value(task + MEMBER_OFFSET(task_struct,thread_group));
-
-		do {
-		//list_head_for_each(main_tasks, task + MEMBER_OFFSET(task_struct,thread_group), mt) {
-
-			//off_task = mt - MEMBER_OFFSET(task_struct,thread_group);
-			if (KDUMP_TYPE_GET(task_struct, off_task, task))  {
+			o_task = iter_thr.curr - MEMBER_OFFSET(task_struct,
+								thread_group);
+			if (KDUMP_TYPE_GET(task_struct, o_task, task))
 				continue;
-			}
 
-			if (add_task(off_task, &pid_reserve, task)) {
-				goto abort_tasks;
-			} else {
-				
-				printf_unfiltered(_("Loaded processes: %d\r"), ++cnt);
-			}
-			off_task = kt_ptr_value(task + MEMBER_OFFSET(task_struct, thread_group)) - MEMBER_OFFSET(task_struct, thread_group);
-			if (off_task == main_tasks) break;
-
-		} while (1);
+			if (!add_task(o_task, &pid_reserve, task))
+				printf_unfiltered(_("Loaded processes: %d\r"),
+									++cnt);
+		}
 	}
 
 	if (b) free(b);
 	if (init_task) free(init_task);
 
-abort_tasks:
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
