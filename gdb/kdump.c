@@ -791,6 +791,7 @@ struct list_iter {
 	offset prev;
 	offset head;
 	offset last;
+	offset fast;
 	int cont;
 	int error;
 };
@@ -799,6 +800,7 @@ static void list_first(struct list_iter *iter, offset o_head)
 {
 	char b_head[GET_TYPE_SIZE(list_head)];
 
+	iter->fast = 0;
 	iter->error = 0;
 	iter->cont = 1;
 
@@ -859,9 +861,40 @@ static void list_next(struct list_iter *iter)
 		warning(_("list item %llx ->next is %llx but the latter's ->prev is %llx\n"),
 					iter->prev, iter->curr, o_prev);
 		iter->error = 1;
+		/*
+		 * broken ->prev link means that there might be cycle that
+		 * does not include head; start detecting cycles
+		 */
+		iter->fast = iter->curr;
 	}
 
-	iter->prev = iter->curr; 
+	/*
+	 * Are we detecting cycles? If so, advance iter->fast to
+	 * iter->curr->next->next and compare iter->curr to both next's
+	 * (Floyd's Tortoise and Hare algorithm)
+	 *
+	 */
+	if (iter->fast) {
+		int i = 2;
+		while(i--) {
+			/*
+			 *  Simply ignore failure to read fast->next, the next
+			 *  call to list_next() will find out anyway.
+			 */
+			if (KDUMP_TYPE_GET(list_head, iter->fast, b_head))
+				break;
+			iter->fast = kt_ptr_value(
+				b_head + MEMBER_OFFSET(list_head, next));
+			if (iter->curr == iter->fast) {
+				warning(_("list_next() detected cycle, aborting traversal\n"));
+				iter->error = 1;
+				iter->cont = 0;
+				return;
+			}
+		}
+	}
+
+	iter->prev = iter->curr;
 	iter->curr = o_next;
 }
 
