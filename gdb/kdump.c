@@ -1224,6 +1224,7 @@ struct page {
 	unsigned long flags;
 	struct list_head lru;
 	offset first_page;
+	int valid;
 };
 
 enum slab_type {
@@ -1446,6 +1447,11 @@ check_kmem_slab(struct kmem_cache *cachep, struct kmem_slab *slab,
 
 		o_prev_obj = o_obj;
 		page = virt_to_head_page(o_obj);
+		if (!page.valid) {
+			warning(_("slab %llx object %llx could not read struct page\n"),
+					o_slab, o_obj);
+			continue;
+		}
 		if (!PageSlab(page))
 			warning(_("slab %llx object %llx is not on PageSlab page\n"),
 					o_slab, o_obj);
@@ -1831,7 +1837,10 @@ static struct page read_page(offset o_page)
 	char b_page[GET_TYPE_SIZE(page)];
 	struct page page;
 
-	KDUMP_TYPE_GET(page, o_page, b_page);
+	if (KDUMP_TYPE_GET(page, o_page, b_page)) {
+		page.valid = 0;
+		return page;
+	}
 
 	page.flags = kt_long_value(b_page + MEMBER_OFFSET(page, flags));
 	page.lru.next = kt_ptr_value(b_page + MEMBER_OFFSET(page, lru)
@@ -1840,13 +1849,14 @@ static struct page read_page(offset o_page)
 					+ MEMBER_OFFSET(list_head, prev));
 	page.first_page = kt_ptr_value(b_page +
 					MEMBER_OFFSET(page, first_page));
+	page.valid = 1;
 
 	return page;
 }
 
 static inline struct page compound_head(struct page page)
 {
-	if (PageTail(page))
+	if (page.valid && PageTail(page))
 		return read_page(page.first_page);
 	return page;
 }
@@ -1874,6 +1884,12 @@ static int check_slab_obj(offset obj)
 	int free = 0;
 
 	page = virt_to_head_page(obj);
+
+	if (!page.valid) {
+		warning(_("unable to read struct page for object at %llx\n"),
+				obj);
+		return 0;
+	}
 
 	if (!PageSlab(page))
 		return 0;
