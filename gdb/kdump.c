@@ -902,7 +902,8 @@ static void list_next(struct list_iter *iter)
 		 * broken ->prev link means that there might be cycle that
 		 * does not include head; start detecting cycles
 		 */
-		iter->fast = iter->curr;
+		if (!iter->fast)
+			iter->fast = iter->curr;
 	}
 
 	/*
