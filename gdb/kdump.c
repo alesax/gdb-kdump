@@ -1306,6 +1306,7 @@ struct kmem_cache {
 	htab_t obj_ac;
 	unsigned int buffer_size;
 	int array_caches_inited;
+	int broken;
 };
 
 struct kmem_slab {
@@ -1405,7 +1406,12 @@ init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
 	char b_bufctl[bufctl_size_target];
 	int i;
 
-	KDUMP_TYPE_GET(slab, o_slab, b_slab);
+	if (KDUMP_TYPE_GET(slab, o_slab, b_slab)) {
+		warning(_("error reading struct slab %llx of cache %s\n"),
+							o_slab, cachep->name);
+		return NULL;
+	}
+
 	slab = malloc(sizeof(struct kmem_slab));
 
 	slab->o_slab = o_slab;
@@ -1414,7 +1420,15 @@ init_kmem_slab(struct kmem_cache *cachep, offset o_slab)
 	slab->s_mem = kt_ptr_value(b_slab + MEMBER_OFFSET(slab, s_mem));
 
 	slab->bufctl = malloc(bufctl_size);
-	target_read_raw_memory(o_bufctl, (void *) b_bufctl, bufctl_size_target);
+	if (target_read_raw_memory(o_bufctl, (void *) b_bufctl,
+				bufctl_size_target)) {
+		warning(_("error reading bufctl %llx of slab %llx of cache %s\n"),
+						o_bufctl, o_slab, cachep->name);
+		for (i = 0; i < cachep->num; i++)
+			slab->bufctl[i] = BUFCTL_END;
+
+		return slab;
+	}
 
 	for (i = 0; i < cachep->num; i++)
 		slab->bufctl[i] = kt_int_value(b_bufctl + i*GET_TYPE_SIZE(_int));
@@ -1529,6 +1543,9 @@ check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 		o_slab = iter.curr - MEMBER_OFFSET(slab, list);
 //		printf("found slab: %llx\n", o_slab);
 		slab = init_kmem_slab(cachep, o_slab);
+		if (!slab)
+			continue;
+
 		counted_free += check_kmem_slab(cachep, slab, type);
 		free_kmem_slab(slab);
 	}
@@ -1644,10 +1661,23 @@ static void init_kmem_array_caches(struct kmem_cache *cachep, char * b_caches,
 	int id;
 
 	for (id = 0; id < nr_ids; id++, b_caches += GET_TYPE_SIZE(_voidp)) {
+		/*
+		 * A node cannot have alien cache on the same node, but some
+		 * kernels (-xen) apparently don't have the corresponding
+		 * array_cache pointer NULL, so skip it now.
+		 */
+		if (type == ac_alien && id1 == id)
+			continue;
 		o_array_cache = kt_ptr_value(b_caches);
 		if (!o_array_cache)
 			continue;
-		KDUMP_TYPE_GET(array_cache, o_array_cache, b_array_cache);
+		if (KDUMP_TYPE_GET(array_cache, o_array_cache, b_array_cache)) {
+			warning(_("could not read array_cache %llx of cache %s type %s id1=%d id2=%d\n"),
+					o_array_cache, cachep->name,
+					ac_type_names[type], id1,
+					type == ac_shared ? -1 : id);
+			continue;
+		}
 		init_kmem_array_cache(cachep, o_array_cache, b_array_cache,
 			type, id1, type == ac_shared ? -1 : id);
 	}
@@ -1657,26 +1687,36 @@ static void init_kmem_list3_arrays(struct kmem_cache *cachep, offset o_list3,
 								int nid)
 {
 	char b_list3[GET_TYPE_SIZE(kmem_list3)];
-	offset o_alien_caches;
-	char *b_alien_caches;
 	char *b_shared_caches;
+	offset o_alien_caches;
+	char b_alien_caches[nr_node_ids * GET_TYPE_SIZE(_voidp)];
 
-	KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3);
+	if (KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3)) {
+                warning(_("error reading kmem_list3 %llx of nid %d of kmem_cache %llx name %s\n"),
+				o_list3, nid, cachep->o_cache, cachep->name);
+		return;
+	}
 
 	/* This is a single pointer, but treat it as array to reuse code */
 	b_shared_caches = b_list3 + MEMBER_OFFSET(kmem_list3, shared);
 	init_kmem_array_caches(cachep, b_shared_caches, nid, 1, ac_shared);
 
-	o_alien_caches = kt_ptr_value(b_list3 +
+	o_alien_caches = kt_ptr_value(b_list3 + 
 					MEMBER_OFFSET(kmem_list3, alien));
-	b_alien_caches = malloc(nr_node_ids * GET_TYPE_SIZE(_voidp));
-	target_read_raw_memory(o_alien_caches, (void *)b_alien_caches,
-					nr_node_ids * GET_TYPE_SIZE(_voidp));
+
+	//TODO: check that this only happens for single-node systems?
+	if (!o_alien_caches)
+		return;
+
+	if (target_read_raw_memory(o_alien_caches, (void *)b_alien_caches,
+					nr_node_ids * GET_TYPE_SIZE(_voidp))) {
+		warning(_("could not read alien array %llx of kmem_list3 %llx of nid %d of cache %s\n"),
+				o_alien_caches, o_list3, nid, cachep->name);
+	}
+
 
 	init_kmem_array_caches(cachep, b_alien_caches, nid, nr_node_ids,
 								ac_alien);
-
-	free(b_alien_caches);
 }
 
 static void check_kmem_list3_slabs(struct kmem_cache *cachep,
@@ -1687,7 +1727,12 @@ static void check_kmem_list3_slabs(struct kmem_cache *cachep,
 	unsigned long counted_free = 0;
 	unsigned long free_objects;
 
-	KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3);
+	if(KDUMP_TYPE_GET(kmem_list3, o_list3, b_list3)) {
+                warning(_("error reading kmem_list3 %llx of nid %d of kmem_cache %llx name %s\n"),
+				o_list3, nid, cachep->o_cache, cachep->name);
+		return;
+	}
+
 	free_objects = kt_long_value(b_list3 + MEMBER_OFFSET(kmem_list3,
 							free_objects));
 
@@ -1702,8 +1747,8 @@ static void check_kmem_list3_slabs(struct kmem_cache *cachep,
 
 //	printf("free=%lu counted=%lu\n", free_objects, counted_free);
 	if (free_objects != counted_free)
-		fprintf(stderr, "cache %s free=%lu counted=%lu\n", cachep->name,
-						free_objects, counted_free);
+		warning(_("cache %s should have %lu free objects but we counted %lu\n"),
+				cachep->name, free_objects, counted_free);
 }
 
 static struct kmem_cache *init_kmem_cache(offset o_cache)
@@ -1726,10 +1771,17 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 
 //	printf("kmem_cache %llx not found in hashtab, inserting\n", o_cache);
 
-	KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache);
-
 	cache = malloc(sizeof(struct kmem_cache));
 	cache->o_cache = o_cache;
+
+	if (KDUMP_TYPE_GET(kmem_cache, o_cache, b_cache)) {
+		warning(_("error reading contents of kmem_cache at %llx\n"),
+								o_cache);
+		cache->broken = 1;
+		cache->name = "(broken)";
+		goto done;
+	}
+
 	cache->num = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache, num));
 	cache->buffer_size = kt_int_value(b_cache + MEMBER_OFFSET(kmem_cache,
 								buffer_size));
@@ -1742,8 +1794,10 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 	}
 
 	cache->name = kt_strndup(o_cache_name, 128);
+	cache->broken = 0;
 //	printf("cache name is: %s\n", cache->name);
 
+done:
 	*slot = cache;
 	return cache;
 }
@@ -1756,10 +1810,15 @@ static void init_kmem_cache_arrays(struct kmem_cache *cache)
 	char *nodelist, *array_cache;
 	int node;
 
-	if (cache->array_caches_inited)
+	if (cache->array_caches_inited || cache->broken)
 		return;
 
-	KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache);
+	if (KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache)) {
+		warning(_("error reading contents of kmem_cache at %llx\n"),
+							cache->o_cache);
+		return;
+	}
+
 
 	cache->obj_ac = htab_create_alloc(64, kmem_ac_hash, kmem_ac_eq,
 						NULL, xcalloc, xfree);
@@ -1791,7 +1850,11 @@ static void check_kmem_cache(struct kmem_cache *cache)
 
 	init_kmem_cache_arrays(cache);
 
-	KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache);
+	if (KDUMP_TYPE_GET(kmem_cache, cache->o_cache, b_cache)) {
+		warning(_("error reading contents of kmem_cache at %llx\n"),
+							cache->o_cache);
+		return;
+	}
 
 	b_nodelists = b_cache + MEMBER_OFFSET(kmem_cache, nodelists);
 	for (node = 0; node < nr_node_ids;
@@ -1866,6 +1929,10 @@ static void check_kmem_caches(void)
 		cache = init_kmem_cache(o_kmem_cache);
 		printf("checking kmem cache %llx name %s\n", o_kmem_cache,
 				cache->name);
+		if (cache->broken) {
+			printf("cache is too broken, skipping");
+			continue;
+		}
 		check_kmem_cache(cache);
 	}
 }
