@@ -1521,12 +1521,12 @@ check_kmem_slabs(struct kmem_cache *cachep, offset o_slabs,
 	struct kmem_slab *slab;
 	unsigned long counted_free = 0;
 
-	printf("checking slab list %llx type %s\n", o_slabs,
-							slab_type_names[type]);
+//	printf("checking slab list %llx type %s\n", o_slabs,
+//							slab_type_names[type]);
 
 	list_for_each(iter, o_slabs) {
 		o_slab = iter.curr - MEMBER_OFFSET(slab, list);
-		printf("found slab: %llx\n", o_slab);
+//		printf("found slab: %llx\n", o_slab);
 		slab = init_kmem_slab(cachep, o_slab);
 		counted_free += check_kmem_slab(cachep, slab, type);
 		free_kmem_slab(slab);
@@ -1626,7 +1626,7 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 
 		*slot = obj_ac;
 
-		//check_kmem_obj(cachep, o_obj);
+		check_kmem_obj(cachep, o_obj);
 	}
 
 	free(b_entries);
@@ -1699,7 +1699,7 @@ static void check_kmem_list3_slabs(struct kmem_cache *cachep,
 	o_lhb = o_list3 + MEMBER_OFFSET(kmem_list3, slabs_free);
 	counted_free += check_kmem_slabs(cachep, o_lhb, slab_free);
 
-	printf("free=%lu counted=%lu\n", free_objects, counted_free);
+//	printf("free=%lu counted=%lu\n", free_objects, counted_free);
 	if (free_objects != counted_free)
 		fprintf(stderr, "cache %s free=%lu counted=%lu\n", cachep->name,
 						free_objects, counted_free);
@@ -1741,7 +1741,7 @@ static struct kmem_cache *init_kmem_cache(offset o_cache)
 	}
 
 	cache->name = kt_strndup(o_cache_name, 128);
-	printf("cache name is: %s\n", cache->name);
+//	printf("cache name is: %s\n", cache->name);
 
 	*slot = cache;
 	return cache;
@@ -1842,7 +1842,7 @@ static int init_kmem_caches(void)
 
 	list_for_each(iter, o_slab_caches) {
 		o_kmem_cache = iter.curr - MEMBER_OFFSET(kmem_cache,list);
-		printf("found kmem cache: %llx\n", o_kmem_cache);
+//		printf("found kmem cache: %llx\n", o_kmem_cache);
 
 		init_kmem_cache(o_kmem_cache);
 	}
@@ -1863,8 +1863,6 @@ static void check_kmem_caches(void)
 		o_kmem_cache = iter.curr - MEMBER_OFFSET(kmem_cache,list);
 
 		cache = init_kmem_cache(o_kmem_cache);
-		if (strcmp("names_cache", cache->name))
-			continue;
 		printf("checking kmem cache %llx name %s\n", o_kmem_cache,
 				cache->name);
 		check_kmem_cache(cache);
@@ -2118,7 +2116,7 @@ static int init_values(void)
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
-//	check_kmem_caches();
+	check_kmem_caches();
 //	check_slab_obj(0xffff880138bedf40UL);
 //	check_slab_obj(0xffff8801359734c0UL);
 
