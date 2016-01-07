@@ -434,6 +434,20 @@ unsigned long long kt_ptr_value (void *buff)
 	return val;
 }
 
+static unsigned long long kt_ptr_value_off (offset addr)
+{
+	char buf[8];
+	unsigned len = GET_TYPE_SIZE(_voidp);
+
+	if (target_read_raw_memory(addr, (void *)buf, len)) {
+		warning(_("Cannot read target memory addr=%llx length=%u\n"),
+								addr, len);
+		return -1;
+	}
+
+	return kt_ptr_value(buf);
+}
+
 static unsigned long long kt_int_value_off (offset addr)
 {
 	char buf[8];
@@ -1351,9 +1365,11 @@ static int kmem_ac_eq(const void *obj, const void *off)
 #define VMEMMAP_START	0xffffea0000000000UL
 #define PAGE_SHIFT	12
 
+static unsigned long long memmap = VMEMMAP_START;
+
 static offset pfn_to_page_memmap(unsigned long pfn)
 {
-	return VMEMMAP_START + pfn*GET_TYPE_SIZE(page);
+	return memmap + pfn*GET_TYPE_SIZE(page);
 }
 
 //TODO: once the config querying below works, support all variants
@@ -1973,8 +1989,10 @@ static int check_slab_obj(offset obj)
 static int init_memmap(void)
 {
 	const char *cfg;
+	offset o_mem_map;
 	offset o_page;
 	struct page page;
+	unsigned long long p_memmap;
 
 	//FIXME: why are all NULL?
 
@@ -1986,6 +2004,17 @@ static int init_memmap(void)
 
 	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_SPARSEMEM_VMEMMAP");
 	printf("CONFIG_SPARSEMEM_VMEMMAP=%s\n", cfg ? cfg : "(null)");
+
+	o_mem_map = get_symbol_value("mem_map");
+	printf("memmap: %llx\n", o_mem_map);
+
+	if (o_mem_map) {
+		p_memmap = kt_ptr_value_off(o_mem_map);
+		printf("memmap is pointer to: %llx\n", p_memmap);
+		if (p_memmap != -1)
+			memmap = p_memmap;
+	}
+
 /*
 	o_page = virt_to_opage(0xffff880138bedf40UL);
 	printf("ffff880138bedf40 is page %llx\n", o_page);
@@ -2089,7 +2118,7 @@ static int init_values(void)
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
-	check_kmem_caches();
+//	check_kmem_caches();
 //	check_slab_obj(0xffff880138bedf40UL);
 //	check_slab_obj(0xffff8801359734c0UL);
 
