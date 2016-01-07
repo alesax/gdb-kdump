@@ -1591,7 +1591,7 @@ static void check_kmem_obj(struct kmem_cache *cachep, offset o_obj)
 				o_obj, idx, cachep->num, cachep->o_cache);
 }
 
-static int init_kmem_array_cache(struct kmem_cache *cachep,
+static void init_kmem_array_cache(struct kmem_cache *cachep,
 		offset o_array_cache, char *b_array_cache, enum ac_type type,
 		int id1, int id2)
 {
@@ -1615,7 +1615,7 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 						o_array_cache, avail, limit);
 
 	if (!avail)
-		return 0;
+		return;
 
 	ac = malloc(sizeof(struct kmem_ac));
 	ac->offset = o_array_cache;
@@ -1625,8 +1625,12 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 
 	b_entries = malloc(avail * GET_TYPE_SIZE(_voidp));
 
-	target_read_raw_memory(o_entries, (void *)b_entries,
-						avail *	GET_TYPE_SIZE(_voidp));
+	if (target_read_raw_memory(o_entries, (void *)b_entries,
+					avail *	GET_TYPE_SIZE(_voidp))) {
+		warning(_("could not read entries of array_cache %llx of cache %s\n"),
+						o_array_cache, cachep->name);
+		goto done;
+	}
 
 	for (i = 0; i < avail; i++) {
 		o_obj = kt_ptr_value(b_entries + i * GET_TYPE_SIZE(_voidp));
@@ -1647,9 +1651,8 @@ static int init_kmem_array_cache(struct kmem_cache *cachep,
 		check_kmem_obj(cachep, o_obj);
 	}
 
+done:
 	free(b_entries);
-
-	return 0;
 }
 
 /* Array of array_caches, such as kmem_cache.array or *kmem_list3.alien */
