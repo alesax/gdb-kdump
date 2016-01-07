@@ -1576,6 +1576,10 @@ static void check_kmem_obj(struct kmem_cache *cachep, offset o_obj)
 	o_slab = page.lru.prev;
 	slabp = init_kmem_slab(cachep, o_slab);
 
+	//TODO: check also that slabp is in appropriate lists? could be quite slow...
+	if (!slabp)
+		return;
+
 	//TODO: kernel implementation uses reciprocal_divide, check?
 	idx = (o_obj - slabp->s_mem) / cachep->buffer_size;
 	obj_base = slabp->s_mem + idx * cachep->buffer_size;
