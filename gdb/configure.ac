@@ -1032,7 +1032,7 @@ AM_CONDITIONAL(HAVE_PYTHON, test "${have_libpython}" != no)
 # -------------------- #
 # Check for libguile.  #
 # -------------------- #
-
+data
 dnl Utility to simplify finding libguile.
 dnl $1 = pkg-config-program
 dnl $2 = space-separate list of guile versions to try
@@ -2407,6 +2407,51 @@ else
      fi
   fi
 fi
+
+AC_ARG_WITH(libkdumpfile,
+  AC_HELP_STRING([--with-libkdumpfile], [include support for linux kernel dumps (auto/yes/no)]),
+  [], [with_libkdumpfile=auto])
+AC_MSG_CHECKING([whether to use libkdumpfile])
+AC_MSG_RESULT([$with_libkdumpfile])
+
+if test "x$with_libkdumpfile" = "xno"; then
+  AC_MSG_WARN([linux kernel dumps support disabled; GDB is unable to read kdump.])
+else
+  saved_CFLAGS=$CFLAGS
+  CFLAGS="$CFLAGS -Werror"
+  AC_LIB_HAVE_LINKFLAGS([kdumpfile], [],
+			[#include <kdumpfile.h>
+			static kdump_ctx *dump_ctx;])
+  CFLAGS=$saved_CFLAGS
+
+  new_CPPFLAGS=`${pkg_config} --cflags libkdumpfile`
+  if test $? != 0; then
+    AC_MSG_WARN([failure running pkg-config --cflags libkdumpfile}])
+  fi
+  new_LIBS=`${pkg_config} --libs libkdumpfile`
+  if test $? != 0; then
+    AC_MSG_WARN([failure running pkg-config --libs libkdumpfile}])
+  fi
+
+  if test "$HAVE_LIBKDUMPFILE" != yes; then
+     if test "$with_libkdumpfile" = yes; then
+       AC_MSG_ERROR([libkdumpfile is missing or unusable])
+     else
+       AC_MSG_WARN([libkdumpfile is missing or unusable; GDB is unable to kdump.])
+     fi
+  else
+    LIBKDUMPFILE_CPPFLAGS=${new_CPPFLAGS}
+    LIBKDUMPFILE=${new_LIBS}
+    KDUMP_SOURCES=kdump.c
+    KDUMP_OBJS=kdump.o
+    AC_SUBST(KDUMP_OBJS)
+    AC_SUBST(KDUMP_SOURCES)
+    AC_SUBST(LIBKDUMPFILE_CPPFLAGS)
+    AC_SUBST(LIBKDUMPFILE)
+  fi
+fi
+
+
 
 # If nativefile (NAT_FILE) is not set in config/*/*.m[ht] files, we link
 # to an empty version.

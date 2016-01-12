@@ -136,12 +136,8 @@ CC_LD=$(COMPILER)
 INCLUDE_DIR =  $(srcdir)/../include
 INCLUDE_CFLAGS = -I$(INCLUDE_DIR)
 
-LIBKDUMPFILE = -L$(LIBKDUMPFILE_DIR)/lib64 -lkdumpfile
 # Where is the "-liberty" library?  Typically in ../libiberty.
 LIBIBERTY = ../libiberty/libiberty.a
-
-LIBKDUMPFILE_DIR = /home/alnovak/local
-LIBKDUMPFILE_CFLAGS = -I$(LIBKDUMPFILE_DIR)/include
 
 # Where is the BFD library?  Typically in ../bfd.
 BFD_DIR = ../bfd
@@ -200,6 +196,11 @@ INTL_CFLAGS = @INCINTL@
 
 # Where is the ICONV library?  This will be empty if in libc or not available.
 LIBICONV = @LIBICONV@
+
+LIBKDUMPFILE = @LIBKDUMPFILE@
+LIBKDUMPFILE_CPPFLAGS = @LIBKDUMPFILE_CPPFLAGS@
+KDUMP_SOURCES = @KDUMP_SOURCES@
+KDUMP_OBJS = @KDUMP_OBJS@
 
 # Did the user give us a --with-gdb-datadir option?
 GDB_DATADIR = @GDB_DATADIR@
@@ -582,7 +583,7 @@ INTERNAL_CFLAGS_BASE = \
 	$(GDB_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) $(ZLIBINC) \
 	$(BFD_CFLAGS) $(INCLUDE_CFLAGS) $(LIBDECNUMBER_CFLAGS) \
 	$(INTL_CFLAGS) $(INCGNU) $(ENABLE_CFLAGS) $(INTERNAL_CPPFLAGS) \
-	$(LIBKDUMPFILE_CFLAGS)
+	$(LIBKDUMPFILE_CPPFLAGS)
 INTERNAL_WARN_CFLAGS = $(INTERNAL_CFLAGS_BASE) $(GDB_WARN_CFLAGS)
 INTERNAL_CFLAGS = $(INTERNAL_WARN_CFLAGS) $(GDB_WERROR_CFLAGS)
 
@@ -844,7 +845,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	build-id.c buildsym.c \
 	c-exp.y c-lang.c c-typeprint.c c-valprint.c c-varobj.c \
 	charset.c common/cleanups.c cli-out.c coffread.c coff-pe-read.c \
-	complaints.c completer.c continuations.c corefile.c corelow.c kdump.c \
+	complaints.c completer.c continuations.c corefile.c corelow.c \
 	cp-abi.c cp-support.c cp-namespace.c cp-valprint.c \
 	d-exp.y d-lang.c d-namespace.c d-valprint.c \
 	cp-name-parser.y \
@@ -904,7 +905,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	target/waitstatus.c common/print-utils.c common/rsp-low.c \
 	common/errors.c common/common-debug.c common/common-exceptions.c \
 	common/btrace-common.c common/fileio.c \
-	$(SUBDIR_GCC_COMPILE_SRCS)
+	$(SUBDIR_GCC_COMPILE_SRCS) $(KDUMP_SOURCES)
 
 LINTFILES = $(SFILES) $(YYFILES) $(CONFIG_SRCS) init.c
 
@@ -1031,7 +1032,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	blockframe.o breakpoint.o break-catch-sig.o break-catch-throw.o \
 	break-catch-syscall.o \
 	findvar.o regcache.o cleanups.o \
-	charset.o continuations.o corelow.o kdump.o disasm.o dummy-frame.o dfp.o \
+	charset.o continuations.o corelow.o disasm.o dummy-frame.o dfp.o \
 	source.o value.o eval.o valops.o valarith.o valprint.o printcmd.o \
 	block.o symtab.o psymtab.o symfile.o symfile-debug.o symmisc.o \
 	linespec.o dictionary.o namespace.o \
@@ -1094,7 +1095,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	format.o registry.o btrace.o record-btrace.o waitstatus.o \
 	print-utils.o rsp-low.o errors.o common-debug.o debug.o \
 	common-exceptions.o btrace-common.o fileio.o \
-	$(SUBDIR_GCC_COMPILE_OBS)
+	$(SUBDIR_GCC_COMPILE_OBS) $(KDUMP_OBJS)
 
 TSOBS = inflow.o
 

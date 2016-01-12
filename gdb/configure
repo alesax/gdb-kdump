@@ -594,6 +594,12 @@ LIBOBJS
 GCORE_TRANSFORM_NAME
 GDB_TRANSFORM_NAME
 GDB_NM_FILE
+LIBKDUMPFILE_CPPFLAGS
+KDUMP_SOURCES
+KDUMP_OBJS
+LTLIBKDUMPFILE
+LIBKDUMPFILE
+HAVE_LIBKDUMPFILE
 LTLIBBABELTRACE
 LIBBABELTRACE
 HAVE_LIBBABELTRACE
@@ -854,6 +860,8 @@ enable_multi_ice
 enable_gdbserver
 with_babeltrace
 with_libbabeltrace_prefix
+with_libkdumpfile
+with_libkdumpfile_prefix
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1580,6 +1588,9 @@ Optional Packages:
   --with-babeltrace       include babeltrace support (auto/yes/no)
   --with-libbabeltrace-prefix[=DIR]  search for libbabeltrace in DIR/include and DIR/lib
   --without-libbabeltrace-prefix     don't search for libbabeltrace in includedir and libdir
+  --with-libkdumpfile     include support for linux kernel dumps (auto/yes/no)
+  --with-libkdumpfile-prefix[=DIR]  search for libkdumpfile in DIR/include and DIR/lib
+  --without-libkdumpfile-prefix     don't search for libkdumpfile in includedir and libdir
 
 Some influential environment variables:
   CC          C compiler command
@@ -9469,7 +9480,7 @@ fi
 # -------------------- #
 # Check for libguile.  #
 # -------------------- #
-
+data
 
 
 
@@ -16506,6 +16517,522 @@ $as_echo "$as_me: WARNING: babeltrace is missing or unusable; GDB is unable to r
      fi
   fi
 fi
+
+
+# Check whether --with-libkdumpfile was given.
+if test "${with_libkdumpfile+set}" = set; then :
+  withval=$with_libkdumpfile;
+else
+  with_libkdumpfile=auto
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to use libkdumpfile" >&5
+$as_echo_n "checking whether to use libkdumpfile... " >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_libkdumpfile" >&5
+$as_echo "$with_libkdumpfile" >&6; }
+
+if test "x$with_libkdumpfile" = "xno"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: linux kernel dumps support disabled; GDB is unable to read kdump." >&5
+$as_echo "$as_me: WARNING: linux kernel dumps support disabled; GDB is unable to read kdump." >&2;}
+else
+  saved_CFLAGS=$CFLAGS
+  CFLAGS="$CFLAGS -Werror"
+
+
+
+
+
+
+
+
+    use_additional=yes
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+
+    eval additional_includedir=\"$includedir\"
+    eval additional_libdir=\"$libdir\"
+
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+
+# Check whether --with-libkdumpfile-prefix was given.
+if test "${with_libkdumpfile_prefix+set}" = set; then :
+  withval=$with_libkdumpfile_prefix;
+    if test "X$withval" = "Xno"; then
+      use_additional=no
+    else
+      if test "X$withval" = "X"; then
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+
+          eval additional_includedir=\"$includedir\"
+          eval additional_libdir=\"$libdir\"
+
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+      else
+        additional_includedir="$withval/include"
+        additional_libdir="$withval/lib"
+      fi
+    fi
+
+fi
+
+      LIBKDUMPFILE=
+  LTLIBKDUMPFILE=
+  INCKDUMPFILE=
+  rpathdirs=
+  ltrpathdirs=
+  names_already_handled=
+  names_next_round='kdumpfile '
+  while test -n "$names_next_round"; do
+    names_this_round="$names_next_round"
+    names_next_round=
+    for name in $names_this_round; do
+      already_handled=
+      for n in $names_already_handled; do
+        if test "$n" = "$name"; then
+          already_handled=yes
+          break
+        fi
+      done
+      if test -z "$already_handled"; then
+        names_already_handled="$names_already_handled $name"
+                        uppername=`echo "$name" | sed -e 'y|abcdefghijklmnopqrstuvwxyz./-|ABCDEFGHIJKLMNOPQRSTUVWXYZ___|'`
+        eval value=\"\$HAVE_LIB$uppername\"
+        if test -n "$value"; then
+          if test "$value" = yes; then
+            eval value=\"\$LIB$uppername\"
+            test -z "$value" || LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$value"
+            eval value=\"\$LTLIB$uppername\"
+            test -z "$value" || LTLIBKDUMPFILE="${LTLIBKDUMPFILE}${LTLIBKDUMPFILE:+ }$value"
+          else
+                                    :
+          fi
+        else
+                              found_dir=
+          found_la=
+          found_so=
+          found_a=
+          if test $use_additional = yes; then
+            if test -n "$shlibext" && test -f "$additional_libdir/lib$name.$shlibext"; then
+              found_dir="$additional_libdir"
+              found_so="$additional_libdir/lib$name.$shlibext"
+              if test -f "$additional_libdir/lib$name.la"; then
+                found_la="$additional_libdir/lib$name.la"
+              fi
+            else
+              if test -f "$additional_libdir/lib$name.$libext"; then
+                found_dir="$additional_libdir"
+                found_a="$additional_libdir/lib$name.$libext"
+                if test -f "$additional_libdir/lib$name.la"; then
+                  found_la="$additional_libdir/lib$name.la"
+                fi
+              fi
+            fi
+          fi
+          if test "X$found_dir" = "X"; then
+            for x in $LDFLAGS $LTLIBKDUMPFILE; do
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+  eval x=\"$x\"
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+              case "$x" in
+                -L*)
+                  dir=`echo "X$x" | sed -e 's/^X-L//'`
+                  if test -n "$shlibext" && test -f "$dir/lib$name.$shlibext"; then
+                    found_dir="$dir"
+                    found_so="$dir/lib$name.$shlibext"
+                    if test -f "$dir/lib$name.la"; then
+                      found_la="$dir/lib$name.la"
+                    fi
+                  else
+                    if test -f "$dir/lib$name.$libext"; then
+                      found_dir="$dir"
+                      found_a="$dir/lib$name.$libext"
+                      if test -f "$dir/lib$name.la"; then
+                        found_la="$dir/lib$name.la"
+                      fi
+                    fi
+                  fi
+                  ;;
+              esac
+              if test "X$found_dir" != "X"; then
+                break
+              fi
+            done
+          fi
+          if test "X$found_dir" != "X"; then
+                        LTLIBKDUMPFILE="${LTLIBKDUMPFILE}${LTLIBKDUMPFILE:+ }-L$found_dir -l$name"
+            if test "X$found_so" != "X"; then
+                                                        if test "$enable_rpath" = no || test "X$found_dir" = "X/usr/lib"; then
+                                LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$found_so"
+              else
+                                                                                haveit=
+                for x in $ltrpathdirs; do
+                  if test "X$x" = "X$found_dir"; then
+                    haveit=yes
+                    break
+                  fi
+                done
+                if test -z "$haveit"; then
+                  ltrpathdirs="$ltrpathdirs $found_dir"
+                fi
+                                if test "$hardcode_direct" = yes; then
+                                                      LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$found_so"
+                else
+                  if test -n "$hardcode_libdir_flag_spec" && test "$hardcode_minus_L" = no; then
+                                                            LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$found_so"
+                                                            haveit=
+                    for x in $rpathdirs; do
+                      if test "X$x" = "X$found_dir"; then
+                        haveit=yes
+                        break
+                      fi
+                    done
+                    if test -z "$haveit"; then
+                      rpathdirs="$rpathdirs $found_dir"
+                    fi
+                  else
+                                                                                haveit=
+                    for x in $LDFLAGS $LIBKDUMPFILE; do
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+  eval x=\"$x\"
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+                      if test "X$x" = "X-L$found_dir"; then
+                        haveit=yes
+                        break
+                      fi
+                    done
+                    if test -z "$haveit"; then
+                      LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }-L$found_dir"
+                    fi
+                    if test "$hardcode_minus_L" != no; then
+                                                                                        LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$found_so"
+                    else
+                                                                                                                                                                                LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }-l$name"
+                    fi
+                  fi
+                fi
+              fi
+            else
+              if test "X$found_a" != "X"; then
+                                LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$found_a"
+              else
+                                                LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }-L$found_dir -l$name"
+              fi
+            fi
+                        additional_includedir=
+            case "$found_dir" in
+              */lib | */lib/)
+                basedir=`echo "X$found_dir" | sed -e 's,^X,,' -e 's,/lib/*$,,'`
+                additional_includedir="$basedir/include"
+                ;;
+            esac
+            if test "X$additional_includedir" != "X"; then
+                                                                                                                if test "X$additional_includedir" != "X/usr/include"; then
+                haveit=
+                if test "X$additional_includedir" = "X/usr/local/include"; then
+                  if test -n "$GCC"; then
+                    case $host_os in
+                      linux*) haveit=yes;;
+                    esac
+                  fi
+                fi
+                if test -z "$haveit"; then
+                  for x in $CPPFLAGS $INCKDUMPFILE; do
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+  eval x=\"$x\"
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+                    if test "X$x" = "X-I$additional_includedir"; then
+                      haveit=yes
+                      break
+                    fi
+                  done
+                  if test -z "$haveit"; then
+                    if test -d "$additional_includedir"; then
+                                            INCKDUMPFILE="${INCKDUMPFILE}${INCKDUMPFILE:+ }-I$additional_includedir"
+                    fi
+                  fi
+                fi
+              fi
+            fi
+                        if test -n "$found_la"; then
+                                                        save_libdir="$libdir"
+              case "$found_la" in
+                */* | *\\*) . "$found_la" ;;
+                *) . "./$found_la" ;;
+              esac
+              libdir="$save_libdir"
+                            for dep in $dependency_libs; do
+                case "$dep" in
+                  -L*)
+                    additional_libdir=`echo "X$dep" | sed -e 's/^X-L//'`
+                                                                                                                                                                if test "X$additional_libdir" != "X/usr/lib"; then
+                      haveit=
+                      if test "X$additional_libdir" = "X/usr/local/lib"; then
+                        if test -n "$GCC"; then
+                          case $host_os in
+                            linux*) haveit=yes;;
+                          esac
+                        fi
+                      fi
+                      if test -z "$haveit"; then
+                        haveit=
+                        for x in $LDFLAGS $LIBKDUMPFILE; do
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+  eval x=\"$x\"
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+                          if test "X$x" = "X-L$additional_libdir"; then
+                            haveit=yes
+                            break
+                          fi
+                        done
+                        if test -z "$haveit"; then
+                          if test -d "$additional_libdir"; then
+                                                        LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }-L$additional_libdir"
+                          fi
+                        fi
+                        haveit=
+                        for x in $LDFLAGS $LTLIBKDUMPFILE; do
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+  eval x=\"$x\"
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+                          if test "X$x" = "X-L$additional_libdir"; then
+                            haveit=yes
+                            break
+                          fi
+                        done
+                        if test -z "$haveit"; then
+                          if test -d "$additional_libdir"; then
+                                                        LTLIBKDUMPFILE="${LTLIBKDUMPFILE}${LTLIBKDUMPFILE:+ }-L$additional_libdir"
+                          fi
+                        fi
+                      fi
+                    fi
+                    ;;
+                  -R*)
+                    dir=`echo "X$dep" | sed -e 's/^X-R//'`
+                    if test "$enable_rpath" != no; then
+                                                                  haveit=
+                      for x in $rpathdirs; do
+                        if test "X$x" = "X$dir"; then
+                          haveit=yes
+                          break
+                        fi
+                      done
+                      if test -z "$haveit"; then
+                        rpathdirs="$rpathdirs $dir"
+                      fi
+                                                                  haveit=
+                      for x in $ltrpathdirs; do
+                        if test "X$x" = "X$dir"; then
+                          haveit=yes
+                          break
+                        fi
+                      done
+                      if test -z "$haveit"; then
+                        ltrpathdirs="$ltrpathdirs $dir"
+                      fi
+                    fi
+                    ;;
+                  -l*)
+                                        names_next_round="$names_next_round "`echo "X$dep" | sed -e 's/^X-l//'`
+                    ;;
+                  *.la)
+                                                                                names_next_round="$names_next_round "`echo "X$dep" | sed -e 's,^X.*/,,' -e 's,^lib,,' -e 's,\.la$,,'`
+                    ;;
+                  *)
+                                        LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$dep"
+                    LTLIBKDUMPFILE="${LTLIBKDUMPFILE}${LTLIBKDUMPFILE:+ }$dep"
+                    ;;
+                esac
+              done
+            fi
+          else
+                                                            LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }-l$name"
+            LTLIBKDUMPFILE="${LTLIBKDUMPFILE}${LTLIBKDUMPFILE:+ }-l$name"
+          fi
+        fi
+      fi
+    done
+  done
+  if test "X$rpathdirs" != "X"; then
+    if test -n "$hardcode_libdir_separator"; then
+                        alldirs=
+      for found_dir in $rpathdirs; do
+        alldirs="${alldirs}${alldirs:+$hardcode_libdir_separator}$found_dir"
+      done
+            acl_save_libdir="$libdir"
+      libdir="$alldirs"
+      eval flag=\"$hardcode_libdir_flag_spec\"
+      libdir="$acl_save_libdir"
+      LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$flag"
+    else
+            for found_dir in $rpathdirs; do
+        acl_save_libdir="$libdir"
+        libdir="$found_dir"
+        eval flag=\"$hardcode_libdir_flag_spec\"
+        libdir="$acl_save_libdir"
+        LIBKDUMPFILE="${LIBKDUMPFILE}${LIBKDUMPFILE:+ }$flag"
+      done
+    fi
+  fi
+  if test "X$ltrpathdirs" != "X"; then
+            for found_dir in $ltrpathdirs; do
+      LTLIBKDUMPFILE="${LTLIBKDUMPFILE}${LTLIBKDUMPFILE:+ }-R$found_dir"
+    done
+  fi
+
+
+        ac_save_CPPFLAGS="$CPPFLAGS"
+
+  for element in $INCKDUMPFILE; do
+    haveit=
+    for x in $CPPFLAGS; do
+
+  acl_save_prefix="$prefix"
+  prefix="$acl_final_prefix"
+  acl_save_exec_prefix="$exec_prefix"
+  exec_prefix="$acl_final_exec_prefix"
+  eval x=\"$x\"
+  exec_prefix="$acl_save_exec_prefix"
+  prefix="$acl_save_prefix"
+
+      if test "X$x" = "X$element"; then
+        haveit=yes
+        break
+      fi
+    done
+    if test -z "$haveit"; then
+      CPPFLAGS="${CPPFLAGS}${CPPFLAGS:+ }$element"
+    fi
+  done
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for libkdumpfile" >&5
+$as_echo_n "checking for libkdumpfile... " >&6; }
+if test "${ac_cv_libkdumpfile+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+
+    ac_save_LIBS="$LIBS"
+    LIBS="$LIBS $LIBKDUMPFILE"
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <kdumpfile.h>
+			static kdump_ctx *dump_ctx;
+int
+main ()
+{
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_libkdumpfile=yes
+else
+  ac_cv_libkdumpfile=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+    LIBS="$ac_save_LIBS"
+
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_libkdumpfile" >&5
+$as_echo "$ac_cv_libkdumpfile" >&6; }
+  if test "$ac_cv_libkdumpfile" = yes; then
+    HAVE_LIBKDUMPFILE=yes
+
+$as_echo "#define HAVE_LIBKDUMPFILE 1" >>confdefs.h
+
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking how to link with libkdumpfile" >&5
+$as_echo_n "checking how to link with libkdumpfile... " >&6; }
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LIBKDUMPFILE" >&5
+$as_echo "$LIBKDUMPFILE" >&6; }
+  else
+    HAVE_LIBKDUMPFILE=no
+            CPPFLAGS="$ac_save_CPPFLAGS"
+    LIBKDUMPFILE=
+    LTLIBKDUMPFILE=
+  fi
+
+
+
+
+
+
+  CFLAGS=$saved_CFLAGS
+
+  new_CPPFLAGS=`${pkg_config} --cflags libkdumpfile`
+  if test $? != 0; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: failure running pkg-config --cflags libkdumpfile}" >&5
+$as_echo "$as_me: WARNING: failure running pkg-config --cflags libkdumpfile}" >&2;}
+  fi
+  new_LIBS=`${pkg_config} --libs libkdumpfile`
+  if test $? != 0; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: failure running pkg-config --libs libkdumpfile}" >&5
+$as_echo "$as_me: WARNING: failure running pkg-config --libs libkdumpfile}" >&2;}
+  fi
+
+  if test "$HAVE_LIBKDUMPFILE" != yes; then
+     if test "$with_libkdumpfile" = yes; then
+       as_fn_error "libkdumpfile is missing or unusable" "$LINENO" 5
+     else
+       { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: libkdumpfile is missing or unusable; GDB is unable to kdump." >&5
+$as_echo "$as_me: WARNING: libkdumpfile is missing or unusable; GDB is unable to kdump." >&2;}
+     fi
+  else
+    LIBKDUMPFILE_CPPFLAGS=${new_CPPFLAGS}
+    LIBKDUMPFILE=${new_LIBS}
+    KDUMP_SOURCES=kdump.c
+    KDUMP_OBJS=kdump.o
+
+
+
+
+  fi
+fi
+
+
 
 # If nativefile (NAT_FILE) is not set in config/*/*.m[ht] files, we link
 # to an empty version.
