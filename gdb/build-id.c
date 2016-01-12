@@ -32,6 +32,9 @@
 #include "observer.h"
 #include <sys/stat.h>
 #include "elf/external.h"
+#include "elf/internal.h"
+#include "elf/common.h"
+#include "bfd/elf-bfd.h"
 
 #define BUILD_ID_VERBOSE_NONE 0
 #define BUILD_ID_VERBOSE_FILENAMES 1
