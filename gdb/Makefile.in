@@ -136,12 +136,9 @@ CC_LD=$(COMPILER)
 INCLUDE_DIR =  $(srcdir)/../include
 INCLUDE_CFLAGS = -I$(INCLUDE_DIR)
 
-LIBKDUMPFILE = -L$(LIBKDUMPFILE_DIR)/lib64 -lkdumpfile
+LIBKDUMPFILE_LDFLAGS = @LIBKDUMPFILE_LDFLAGS@
 # Where is the "-liberty" library?  Typically in ../libiberty.
 LIBIBERTY = ../libiberty/libiberty.a
-
-LIBKDUMPFILE_DIR = /home/alnovak/local
-LIBKDUMPFILE_CFLAGS = -I$(LIBKDUMPFILE_DIR)/include
 
 # Where is the BFD library?  Typically in ../bfd.
 BFD_DIR = ../bfd
@@ -562,7 +559,7 @@ CFLAGS = @CFLAGS@
 # are sometimes a little generic, we think that the risk of collision
 # with other header files is high.  If that happens, we try to mitigate
 # a bit the consequences by putting the Python includes last in the list.
-INTERNAL_CPPFLAGS = @CPPFLAGS@ @GUILE_CPPFLAGS@ @PYTHON_CPPFLAGS@
+INTERNAL_CPPFLAGS = @CPPFLAGS@ @GUILE_CPPFLAGS@ @PYTHON_CPPFLAGS@ @LIBKDUMPFILE_CPPFLAGS@
 
 # Need to pass this to testsuite for "make check".  Probably should be
 # consistent with top-level Makefile.in and gdb/testsuite/Makefile.in
@@ -574,8 +571,7 @@ INTERNAL_CFLAGS_BASE = \
 	$(CFLAGS) $(GLOBAL_CFLAGS) $(PROFILE_CFLAGS) \
 	$(GDB_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) $(ZLIBINC) \
 	$(BFD_CFLAGS) $(INCLUDE_CFLAGS) $(LIBDECNUMBER_CFLAGS) \
-	$(INTL_CFLAGS) $(INCGNU) $(ENABLE_CFLAGS) $(INTERNAL_CPPFLAGS) \
-	$(LIBKDUMPFILE_CFLAGS)
+	$(INTL_CFLAGS) $(INCGNU) $(ENABLE_CFLAGS) $(INTERNAL_CPPFLAGS) 
 INTERNAL_WARN_CFLAGS = $(INTERNAL_CFLAGS_BASE) $(GDB_WARN_CFLAGS)
 INTERNAL_CFLAGS = $(INTERNAL_WARN_CFLAGS) $(GDB_WERROR_CFLAGS)
 
@@ -599,7 +595,7 @@ CLIBS = $(SIM) $(READLINE) $(OPCODES) $(BFD) $(ZLIB) $(INTL) $(LIBIBERTY) $(LIBD
 	$(XM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) \
 	@LIBS@ @GUILE_LIBS@ @PYTHON_LIBS@ \
 	$(LIBEXPAT) $(LIBLZMA) $(LIBBABELTRACE) $(LIBIPT) \
-	$(LIBIBERTY) $(WIN32LIBS) $(LIBGNU) $(LIBKDUMPFILE)
+	$(LIBIBERTY) $(WIN32LIBS) $(LIBGNU) $(LIBKDUMPFILE_LDFLAGS)
 CDEPS = $(XM_CDEPS) $(NAT_CDEPS) $(SIM) $(BFD) $(READLINE_DEPS) \
 	$(OPCODES) $(INTL_DEPS) $(LIBIBERTY) $(CONFIG_DEPS) $(LIBGNU)
 
@@ -838,7 +834,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	build-id.c buildsym.c \
 	c-exp.y c-lang.c c-typeprint.c c-valprint.c c-varobj.c \
 	charset.c common/cleanups.c cli-out.c coffread.c coff-pe-read.c \
-	complaints.c completer.c continuations.c corefile.c corelow.c kdump.c \
+	complaints.c completer.c continuations.c corefile.c corelow.c @KDUMP_SOURCES@ \
 	cp-abi.c cp-support.c cp-namespace.c cp-valprint.c \
 	d-exp.y d-lang.c d-valprint.c \
 	cp-name-parser.y \
@@ -1026,7 +1022,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	blockframe.o breakpoint.o break-catch-sig.o break-catch-throw.o \
 	break-catch-syscall.o \
 	findvar.o regcache.o cleanups.o \
-	charset.o continuations.o corelow.o kdump.o disasm.o dummy-frame.o dfp.o \
+	charset.o continuations.o corelow.o @KDUMP_OBJS@ disasm.o dummy-frame.o dfp.o \
 	source.o value.o eval.o valops.o valarith.o valprint.o printcmd.o \
 	block.o symtab.o psymtab.o symfile.o symfile-debug.o symmisc.o \
 	linespec.o dictionary.o \
