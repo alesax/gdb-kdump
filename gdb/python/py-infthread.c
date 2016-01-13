@@ -47,6 +47,7 @@ create_thread_object (struct thread_info *tp)
 
   thread_obj->thread = tp;
   thread_obj->inf_obj = find_inferior_object (ptid_get_pid (tp->ptid));
+  thread_obj->regcache = NULL;
 
   return thread_obj;
 }
@@ -226,6 +227,34 @@ thpy_is_valid (PyObject *self, PyObject *args)
   Py_RETURN_TRUE;
 }
 
+static PyObject *
+thpy_get_regcache (PyObject *self, void *closure)
+{
+  thread_object *thread_obj = (thread_object *)self;
+  struct regcache *rc;
+  struct thread_info *tp;
+  TRY
+    {
+      THPY_REQUIRE_VALID(thread_obj);
+    }
+  CATCH (except, RETURN_MASK_ALL)
+    {
+      GDB_PY_HANDLE_EXCEPTION (except);
+    }
+  END_CATCH
+
+  if (thread_obj->regcache) {
+    Py_INCREF(thread_obj->regcache);
+    return thread_obj->regcache;
+  }
+
+  tp = thread_obj->thread;
+  rc = get_thread_regcache(tp->ptid);
+  thread_obj->regcache = regcache_to_regcache_object(rc);
+//  Py_INCREF(thread_obj->regcache);
+  return thread_obj->regcache;
+}
+
 /* Return a reference to a new Python object representing a ptid_t.
    The object is a tuple containing (pid, lwp, tid). */
 PyObject *
@@ -284,6 +313,8 @@ static PyGetSetDef thread_object_getset[] =
     "The name of the thread, as set by the user or the OS.", NULL },
   { "num", thpy_get_num, NULL, "ID of the thread, as assigned by GDB.", NULL },
   { "ptid", thpy_get_ptid, NULL, "ID of the thread, as assigned by the OS.",
+    NULL },
+  { "regcache", thpy_get_regcache, NULL, "Register cache for this thread.",
     NULL },
 
   { NULL }
