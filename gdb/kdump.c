@@ -314,11 +314,13 @@ enum {
 	T_REF
 };
 
+#ifdef KDUMP_INITIALIZE_THREADS
 static void free_task_info(struct private_thread_info *addr)
 {
 	struct task_info *ti = (struct task_info*)addr;
 	free(ti);
 }
+#endif
 
 static struct type *my_lookup_struct (const char *name, const struct block *block)
 {
@@ -673,6 +675,7 @@ core_close (struct target_ops *self)
 	kdump_gdbarch = NULL;
 }
 
+#ifdef KDUMP_INITIALIZE_THREADS
 static int init_types(int);
 static int init_types(int flags)
 {
@@ -1054,6 +1057,7 @@ error:
 
 	return 1;
 }
+#endif
 
 static int kdump_do_init(void);
 #ifdef KDUMP_INITIALIZE_THREADS

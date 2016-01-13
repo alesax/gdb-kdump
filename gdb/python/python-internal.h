@@ -509,6 +509,8 @@ int gdbpy_initialize_unwind (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_regcache (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
+int kdump_init_module (void)
+  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 
 struct cleanup *make_cleanup_py_decref (PyObject *py);
 struct cleanup *make_cleanup_py_xdecref (PyObject *py);
@@ -606,4 +608,5 @@ struct varobj_iter *py_varobj_get_iterator (struct varobj *var,
 					    PyObject *printer);
 
 PyObject *regcache_to_regcache_object (struct regcache *rc);
+PyObject *valpy_dereference (PyObject *self, PyObject *args);
 #endif /* GDB_PYTHON_INTERNAL_H */
