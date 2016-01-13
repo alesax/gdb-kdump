@@ -1186,9 +1186,18 @@ kdump_open (const char *arg, int from_tty)
 
 	push_target (&core_ops);
 	
+#if 0
 	if (kdump_do_init()) {
 		error(_("Cannot initialize kdump"));
 	}
+#else
+	{
+	struct inferior *in;
+	print_thread_events = 0;
+	in = current_inferior();
+	inferior_appeared (in, 1);
+	}
+#endif
 
 	return;
 }
