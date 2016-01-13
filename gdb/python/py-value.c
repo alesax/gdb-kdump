@@ -169,7 +169,7 @@ gdbpy_preserve_values (const struct extension_language_defn *extlang,
 }
 
 /* Given a value of a pointer type, apply the C unary * operator to it.  */
-static PyObject *
+PyObject *
 valpy_dereference (PyObject *self, PyObject *args)
 {
   PyObject *result = NULL;
