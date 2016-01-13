@@ -396,6 +396,7 @@ SUBDIR_PYTHON_OBS = \
 	py-inferior.o \
 	py-infevents.o \
 	py-infthread.o \
+	py-kdump.o \
 	py-lazy-string.o \
 	py-linetable.o \
 	py-minsymbol.o \
@@ -439,6 +440,7 @@ SUBDIR_PYTHON_SRCS = \
 	python/py-inferior.c \
 	python/py-infevents.c \
 	python/py-infthread.c \
+	python/py-kdump.c \
 	python/py-lazy-string.c \
 	python/py-linetable.c \
 	python/py-minsymbol.c \
@@ -2603,6 +2605,10 @@ py-infevents.o: $(srcdir)/python/py-infevents.c
 
 py-infthread.o: $(srcdir)/python/py-infthread.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-infthread.c
+	$(POSTCOMPILE)
+
+py-kdump.o: $(srcdir)/python/py-kdump.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-kdump.c
 	$(POSTCOMPILE)
 
 py-lazy-string.o: $(srcdir)/python/py-lazy-string.c

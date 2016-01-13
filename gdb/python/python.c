@@ -1834,7 +1834,8 @@ message == an error message without a stack will be printed."),
       || gdbpy_initialize_arch () < 0
       || gdbpy_initialize_xmethods () < 0
       || gdbpy_initialize_unwind () < 0
-      || gdbpy_initialize_regcache () < 0)
+      || gdbpy_initialize_regcache () < 0
+      || kdump_init_module() < 0)
     goto fail;
 
   gdbpy_to_string_cst = PyString_FromString ("to_string");
