@@ -68,6 +68,10 @@ typedef unsigned long long offset;
 #define NULL_offset 0LL
 #define F_BIG_ENDIAN 1
 
+#if 0
+#define KDUMP_INITIALIZE_THREADS 1
+#endif
+
 unsigned long long kt_int_value (void *buff);
 unsigned long long kt_ptr_value (void *buff);
 
@@ -1052,6 +1056,7 @@ error:
 }
 
 static int kdump_do_init(void);
+#ifdef KDUMP_INITIALIZE_THREADS
 static int kdump_do_init(void)
 {
 	const bfd_arch_info_type *ait;
@@ -1113,6 +1118,16 @@ static int kdump_do_init(void)
 
 	return 0;
 }
+#else
+static int kdump_do_init(void)
+{
+	struct inferior *in;
+	print_thread_events = 0;
+	in = current_inferior();
+	inferior_appeared (in, 1);
+	return 0;
+}
+#endif
 
 static kdump_status kdump_get_symbol_val_cb(kdump_ctx *ctx, const char *name, kdump_addr_t *val)
 {
