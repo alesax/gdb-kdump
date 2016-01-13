@@ -538,8 +538,7 @@ gdbpy_lookup_global_symbol (PyObject *self, PyObject *args, PyObject *kw)
   if (!sym_obj->symbol)
     {
       Py_DECREF (sym_obj);
-      Py_INCREF (Py_None);
-      return Py_None;
+      Py_RETURN_NONE;
     }
 
   return (PyObject *)sym_obj;
