@@ -1338,7 +1338,6 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 			REG(reg_RSP,sp);
 			task_info->sp = reg;
 			REG(reg_RIP,ip);
-			printf ("task %p cpu %02d rip = %p\n", (void*)task_info->task_struct, cpu, reg);
 			task_info->ip = reg;
 			REG(reg_RAX,ax);
 			REG(reg_RCX,cx);
@@ -2255,7 +2254,9 @@ static int init_values(void)
 	struct symbol *s;
 	char *b = NULL, *init_task = NULL, *task = NULL;
 	offset off, o_task, rsp, rip, _rsp;
+	offset tasks;
 	offset o_tasks;
+	offset off_task;
 	offset stack;
 	offset o_init_task;
 	int state;
@@ -2350,7 +2351,7 @@ static int init_values(void)
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
-	check_kmem_caches();
+//	check_kmem_caches();
 //	check_slab_obj(0xffff880138bedf40UL);
 //	check_slab_obj(0xffff8801359734c0UL);
 
@@ -2556,7 +2557,7 @@ kdump_xfer_partial (struct target_ops *ops, enum target_object object,
 	{
 		case TARGET_OBJECT_MEMORY:
 			offset = transform_memory((kdump_paddr_t)offset);
-			r = kdump_read(dump_ctx, (kdump_paddr_t)offset, (unsigned char*)readbuf, (size_t)len, KDUMP_PHYSADDR);
+			r = kdump_read(dump_ctx, KDUMP_KPHYSADDR, (kdump_paddr_t)offset, (unsigned char*)readbuf, (size_t)len);
 			if (r != len) {
 				warning(_("Cannot read %lu bytes from %lx (%lld)!"), (size_t)len, (long unsigned int)offset, (long long)r);
 				return TARGET_XFER_E_IO;
@@ -2958,7 +2959,9 @@ static void kdumpps_command(char *fn, int from_tty)
 		if (!task) continue;
 		if (task->cpu == -1) cpu[0] = '\0';
 		else snprintf(cpu, 5, "% 4d", task->cpu);
+#ifdef _DEBUG
 		printf_filtered(_("% 7d %llx %llx %llx %-4s %s\n"), task->pid, task->task_struct, task->ip, task->sp, cpu, tp->name);
+#endif
 	}
 }
 
