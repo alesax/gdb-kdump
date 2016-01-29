@@ -243,6 +243,8 @@ extern PyTypeObject block_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF("block_object");
 extern PyTypeObject symbol_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("symbol_object");
+extern PyTypeObject minsym_object_type;
+     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("minsym_object");
 extern PyTypeObject section_object_type;
      CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("section_object");
 extern PyTypeObject objfile_object_type;
@@ -305,6 +307,9 @@ typedef struct
 
   /* The thread we represent.  */
   struct thread_info *thread;
+
+  /* Regcache */
+  PyObject *regcache;
 
   /* The Inferior object to which this thread belongs.  */
   PyObject *inf_obj;
@@ -446,9 +451,9 @@ int gdbpy_initialize_commands (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_symbols (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
-int gdbpy_initialize_minsymbols (void)
-  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_sections (void)
+  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
+int gdbpy_initialize_minsymbols (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_symtabs (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
@@ -511,6 +516,10 @@ int gdbpy_initialize_arch (void)
 int gdbpy_initialize_xmethods (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 int gdbpy_initialize_unwind (void)
+  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
+int gdbpy_initialize_regcache (void)
+  CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
+int kdump_init_module (void)
   CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION;
 
 struct cleanup *make_cleanup_py_decref (PyObject *py);
@@ -607,5 +616,8 @@ struct varobj_iter;
 struct varobj;
 struct varobj_iter *py_varobj_get_iterator (struct varobj *var,
 					    PyObject *printer);
+
+PyObject *regcache_to_regcache_object (struct regcache *rc);
+PyObject *valpy_dereference (PyObject *self, PyObject *args);
 
 #endif /* GDB_PYTHON_INTERNAL_H */

@@ -3179,6 +3179,9 @@ static int
 check_types_equal (struct type *type1, struct type *type2,
 		   VEC (type_equality_entry_d) **worklist)
 {
+  if (type1 == type2)
+    return 1;
+
   CHECK_TYPEDEF (type1);
   CHECK_TYPEDEF (type2);
 

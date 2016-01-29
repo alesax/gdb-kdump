@@ -396,6 +396,7 @@ SUBDIR_PYTHON_OBS = \
 	py-inferior.o \
 	py-infevents.o \
 	py-infthread.o \
+	py-kdump.o \
 	py-lazy-string.o \
 	py-linetable.o \
 	py-minsymbol.o \
@@ -404,6 +405,7 @@ SUBDIR_PYTHON_OBS = \
 	py-param.o \
 	py-prettyprint.o \
 	py-progspace.o \
+	py-regcache.o \
 	py-section.o \
 	py-signalevent.o \
 	py-stopevent.o \
@@ -438,6 +440,7 @@ SUBDIR_PYTHON_SRCS = \
 	python/py-inferior.c \
 	python/py-infevents.c \
 	python/py-infthread.c \
+	python/py-kdump.c \
 	python/py-lazy-string.c \
 	python/py-linetable.c \
 	python/py-minsymbol.c \
@@ -446,6 +449,7 @@ SUBDIR_PYTHON_SRCS = \
 	python/py-param.c \
 	python/py-prettyprint.c \
 	python/py-progspace.c \
+	python/py-regcache.c \
 	python/py-section.c \
 	python/py-signalevent.c \
 	python/py-stopevent.c \
@@ -2603,6 +2607,10 @@ py-infthread.o: $(srcdir)/python/py-infthread.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-infthread.c
 	$(POSTCOMPILE)
 
+py-kdump.o: $(srcdir)/python/py-kdump.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-kdump.c
+	$(POSTCOMPILE)
+
 py-lazy-string.o: $(srcdir)/python/py-lazy-string.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-lazy-string.c
 	$(POSTCOMPILE)
@@ -2633,6 +2641,10 @@ py-prettyprint.o: $(srcdir)/python/py-prettyprint.c
 
 py-progspace.o: $(srcdir)/python/py-progspace.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-progspace.c
+	$(POSTCOMPILE)
+
+py-regcache.o: $(srcdir)/python/py-regcache.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-regcache.c
 	$(POSTCOMPILE)
 
 py-section.o: $(srcdir)/python/py-section.c

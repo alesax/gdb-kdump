@@ -1,3 +1,32 @@
+2015-12-05  Joel Brobecker  <brobecker@adacore.com>
+
+	* version.in: Set GDB version number to 7.10.1.
+
+2014-11-28  Pedro Alves  <palves@redhat.com>
+
+	* cp-name-parser.y (conversion_op): Use
+	DEMANGLE_COMPONENT_CONVERSION instead of DEMANGLE_COMPONENT_CAST.
+
+2015-11-26  Markus Metzger  <markus.t.metzger@intel.com>
+
+	PR 19297
+	* btrace.c (btrace_enable): Check whether HAVE_LIBIPT is defined.
+
+2015-09-14  Peter Bergner  <bergner@vnet.ibm.com>
+
+	PR gdb/18957
+	* nat/linux-namespaces.c (setns): Rename from this ...
+	(do_setns): ... to this.  Support calling setns if it exists.
+	(mnsh_handle_setns): Call do_setns.
+
+2015-08-28  Joel Brobecker  <brobecker@adacore.com>
+
+	* version.in: Set GDB version number to 7.10.0.DATE-cvs.
+
+2015-08-28  Joel Brobecker  <brobecker@adacore.com>
+
+	GDB 7.10 released.
+
 2015-08-28  Joel Brobecker  <brobecker@adacore.com>
 
 	* version.in: Set GDB version number to 7.10.

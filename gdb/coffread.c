@@ -737,9 +737,10 @@ coff_symfile_read (struct objfile *objfile, int symfile_flags)
   /* Try to add separate debug file if no symbols table found.   */
   if (!objfile_has_partial_symbols (objfile))
     {
-      char *debugfile;
+      char *debugfile, *build_id_filename;
 
-      debugfile = find_separate_debug_file_by_buildid (objfile);
+      debugfile = find_separate_debug_file_by_buildid (objfile,
+						       &build_id_filename);
 
       if (debugfile == NULL)
 	debugfile = find_separate_debug_file_by_debuglink (objfile);
@@ -752,6 +753,8 @@ coff_symfile_read (struct objfile *objfile, int symfile_flags)
 	  make_cleanup_bfd_unref (abfd);
 	  symbol_file_add_separate (abfd, debugfile, symfile_flags, objfile);
 	}
+
+      xfree (build_id_filename);
     }
 
   do_cleanups (back_to);

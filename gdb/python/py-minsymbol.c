@@ -26,8 +26,6 @@
 #include "objfiles.h"
 #include "value.h"
 
-extern PyTypeObject minsym_object_type;
-
 typedef struct msympy_symbol_object {
   PyObject_HEAD
   /* The GDB minimal_symbol structure this object is wrapping.  */
@@ -131,7 +129,6 @@ msympy_value (PyObject *self, PyObject *args)
   minsym_object *minsym_obj = (minsym_object *)self;
   struct minimal_symbol *minsym = NULL;
   struct value *value = NULL;
-  volatile struct gdb_exception except;
 
   if (!PyArg_ParseTuple (args, ""))
     return NULL;
@@ -143,10 +140,12 @@ msympy_value (PyObject *self, PyObject *args)
 				  MSYMBOL_VALUE_RAW_ADDRESS(minsym));
       if (value)
 	set_value_address(value, MSYMBOL_VALUE_RAW_ADDRESS(minsym));
-    }CATCH (except, RETURN_MASK_ALL) {
-	GDB_PY_HANDLE_EXCEPTION (except);
-    } END_CATCH
-  
+    }
+  CATCH (except, RETURN_MASK_ALL)
+    {
+      GDB_PY_HANDLE_EXCEPTION (except);
+    }
+  END_CATCH
 
   return value_to_value_object (value);
 }
@@ -230,10 +229,9 @@ gdbpy_lookup_minimal_symbol (PyObject *self, PyObject *args, PyObject *kw)
   int domain = VAR_DOMAIN;
   const char *name;
   static char *keywords[] = { "name", NULL };
-  struct bound_minimal_symbol bound_minsym;
+  struct bound_minimal_symbol bound_minsym = {};
   struct minimal_symbol *minsym = NULL;
-  PyObject *msym_obj;
-  volatile struct gdb_exception except;
+  PyObject *msym_obj = NULL;
 
   if (!PyArg_ParseTupleAndKeywords (args, kw, "s|", keywords, &name))
     return NULL;
@@ -241,24 +239,20 @@ gdbpy_lookup_minimal_symbol (PyObject *self, PyObject *args, PyObject *kw)
   TRY
     {
       bound_minsym = lookup_minimal_symbol (name, NULL, NULL);
-    } CATCH (except, RETURN_MASK_ALL) {
-  GDB_PY_HANDLE_EXCEPTION (except);
-
-  } END_CATCH
-
-  if (minsym)
+    }
+  CATCH (except, RETURN_MASK_ALL)
     {
+      GDB_PY_HANDLE_EXCEPTION (except);
+    }
+  END_CATCH
+
+  if (bound_minsym.minsym)
       msym_obj = minsym_to_minsym_object (bound_minsym.minsym);
-      if (!msym_obj)
-	return NULL;
-    }
-  else
-    {
-      msym_obj = Py_None;
-      Py_INCREF (Py_None);
-    }
 
-  return msym_obj;
+  if (msym_obj)
+    return msym_obj;
+
+  Py_RETURN_NONE;
 }
 
 int

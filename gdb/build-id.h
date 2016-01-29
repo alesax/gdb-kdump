@@ -20,9 +20,10 @@
 #ifndef BUILD_ID_H
 #define BUILD_ID_H
 
-/* Locate NT_GNU_BUILD_ID from ABFD and return its content.  */
+/* Separate debuginfo files have corrupted PHDR but SHDR is correct there.
+   Locate NT_GNU_BUILD_ID from ABFD and return its content.  */
 
-extern const struct bfd_build_id *build_id_bfd_get (bfd *abfd);
+extern const struct bfd_build_id *build_id_bfd_shdr_get (bfd *abfd);
 
 /* Return true if ABFD has NT_GNU_BUILD_ID matching the CHECK value.
    Otherwise, issue a warning and return false.  */
@@ -36,13 +37,18 @@ extern int build_id_verify (bfd *abfd,
    the caller.  */
 
 extern bfd *build_id_to_debug_bfd (size_t build_id_len,
-				   const bfd_byte *build_id);
+				   const bfd_byte *build_id, char **link_return,
+				   int add_debug_suffix);
+
+extern char *build_id_to_filename (const struct bfd_build_id *build_id,
+				   char **link_return);
 
 /* Find the separate debug file for OBJFILE, by using the build-id
    associated with OBJFILE's BFD.  If successful, returns a malloc'd
    file name for the separate debug file.  The caller must free this.
    Otherwise, returns NULL.  */
 
-extern char *find_separate_debug_file_by_buildid (struct objfile *objfile);
+extern char *find_separate_debug_file_by_buildid (struct objfile *objfile,
+					       char **build_id_filename_return);
 
 #endif /* BUILD_ID_H */

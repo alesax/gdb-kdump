@@ -1833,7 +1833,9 @@ message == an error message without a stack will be printed."),
       || gdbpy_initialize_clear_objfiles_event ()  < 0
       || gdbpy_initialize_arch () < 0
       || gdbpy_initialize_xmethods () < 0
-      || gdbpy_initialize_unwind () < 0)
+      || gdbpy_initialize_unwind () < 0
+      || gdbpy_initialize_regcache () < 0
+      || kdump_init_module() < 0)
     goto fail;
 
   gdbpy_to_string_cst = PyString_FromString ("to_string");
@@ -2027,7 +2029,7 @@ a boolean indicating if name is a field of the current implied argument\n\
     METH_VARARGS | METH_KEYWORDS,
     "lookup_global_symbol (name [, domain]) -> symbol\n\
 Return the symbol corresponding to the given name (or None)." },
-{ "lookup_minimal_symbol", (PyCFunction) gdbpy_lookup_minimal_symbol,
+  { "lookup_minimal_symbol", (PyCFunction) gdbpy_lookup_minimal_symbol,
     METH_VARARGS | METH_KEYWORDS,
     "lookup_minimal_symbol (name) -> minsym\n\
 Return the symbol corresponding to the given name (or None)." },
