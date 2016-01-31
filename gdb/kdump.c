@@ -159,7 +159,7 @@ typedef enum {
 	ARCH_NONE,
 	ARCH_X86_64,
 	ARCH_S390X,
-	ARCH_PPC64LE,
+	ARCH_PPC64,
 } t_arch;
 
 struct cpuinfo {
@@ -418,6 +418,23 @@ enum {
 	T_BASE,
 	T_REF
 };
+
+//static int ppc64_retregs_active(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp, int cpu);
+
+struct t_kdump_arch {
+	char *kdident;
+	char *gdbident;
+	int flags;
+	t_arch arch;
+	int (*init_func)(const struct t_kdump_arch *, int *);
+	int (*retregs_active_func)(struct task_info *task_info,
+			struct regcache *rc, kdump_reg_t rsp, int cpu);
+	int (*retregs_scheduled_func)(struct task_info *task_info, 
+			struct regcache *rc, kdump_reg_t rsp);
+} ;
+
+static const struct t_kdump_arch *kdump_arch = NULL;
+
 
 static void free_task_info(struct private_thread_info *addr)
 {
@@ -1191,6 +1208,169 @@ static int get_process_cpu(offset task)
 	return -1;
 }
 
+static int x86_retregs_active(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp, int cpu)
+{
+	kdump_reg_t rip, val, _b, *b = &_b;
+	long long regs[64];
+	kdump_reg_t reg;
+
+#ifdef _DEBUG
+	printf("task %p is running on %d\n", (void*)task_info->task_struct, cpu);
+#endif
+
+#define REG(en,mem) kdump_read_reg(dump_ctx, cpu, GET_REGISTER_OFFSET(mem), &reg); regcache_raw_supply(rc, en, &reg)
+
+	REG(reg_RSP,sp);
+	task_info->sp = reg;
+	REG(reg_RIP,ip);
+	task_info->ip = reg;
+	REG(reg_RAX,ax);
+	REG(reg_RCX,cx);
+	REG(reg_RDX,dx);
+	REG(reg_RBX,bx);
+	REG(reg_RBP,bp);
+	REG(reg_RSI,si);
+	REG(reg_RDI,di);
+	REG(reg_R8,r8);
+	REG(reg_R9,r9);
+	REG(reg_R10,r10);
+	REG(reg_R11,r11);
+	REG(reg_R12,r12);
+	REG(reg_R13,r13);
+	REG(reg_R14,r14);
+	REG(reg_R15,r15);
+	REG(reg_RFLAGS,flags);
+	REG(reg_ES,es);
+	REG(reg_CS,cs);
+	REG(reg_SS,ss);
+	REG(reg_DS,ds);
+	REG(reg_FS,fs);
+	REG(reg_GS,gs);
+#undef REG
+	return 0;
+}
+static int x86_retregs_scheduled(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp)
+{
+	kdump_reg_t rip, val, _b, *b = &_b;
+	long long regs[64];
+
+	if (KDUMP_TYPE_GET(_voidp, rsp, b)) return -2;
+	rip = kt_ptr_value(b);
+
+	/*
+	 * So we're gonna skip its stackframe
+	 * FIXME: use the size obtained from debuginfo
+	 */
+	rsp += 0x148;
+	if (target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6))
+		warning(_("Could not read regs\n"));
+
+	regcache_raw_supply(rc, 15, &regs[5]);
+	regcache_raw_supply(rc, 14, &regs[4]);
+	regcache_raw_supply(rc, 13, &regs[3]);
+	regcache_raw_supply(rc, 12, &regs[2]);
+	regcache_raw_supply(rc, 6, &regs[1]);
+	regcache_raw_supply(rc, 3, &regs[0]);
+
+	KDUMP_TYPE_GET(_voidp, rsp, b);
+	rip = kt_ptr_value(b);
+	rsp += 8;
+
+	regcache_raw_supply(rc, 7, &rsp);
+	regcache_raw_supply(rc, 16, &rip);
+
+	task_info->sp = rsp;
+	task_info->ip = rip;
+
+	return 0;
+}
+static int ppc64_retregs_active(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp, int cpu)
+{
+	kdump_reg_t val;
+	kdump_reg_t reg;
+	int i;
+	long long regs[64];
+	for (i = 0; i < 32; i ++) {
+		kdump_read_reg(dump_ctx, cpu, i, &reg);
+		val = htobe64(reg);
+		regcache_raw_supply(rc, i, &val);
+	//	kdump_read_reg(dump_ctx, cpu, 32, &reg); regcache_raw_supply(rc, 32, &val);
+	//	kdump_read_reg(dump_ctx, cpu, 1, &reg); regcache_raw_supply(rc, 1, &val);
+	}
+	for (i = 32; i < 49; i ++) {
+		kdump_read_reg(dump_ctx, cpu, i, &reg);
+		val = htobe64(reg);
+		regcache_raw_supply(rc, i+32, &val);
+	}
+	kdump_read_reg(dump_ctx, cpu, 32, &reg);
+	task_info->ip = reg;
+	kdump_read_reg(dump_ctx, cpu, 1, &reg);
+	task_info->sp = reg;
+	for (i = 0; i < 129; i ++) {
+		val = i;
+	//	regcache_raw_supply(rc, i, &val);
+	}
+
+	return 0;
+}
+
+static int ppc64_retregs_scheduled(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp)
+{
+	return 0;
+}
+
+static int s390x_retregs_active(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp, int cpu)
+{
+	kdump_reg_t rip, val, _b, *b = &_b;
+
+	if (! KDUMP_TYPE_GET(_voidp, rsp+136, b))
+		rip = kt_ptr_value(b);
+	if (KDUMP_TYPE_GET(_voidp, rsp+144, b)) return -3;
+	rsp = kt_ptr_value(b);
+	task_info->sp = rsp;
+	task_info->ip = rip;
+
+	val = be64toh(rip);
+	regcache_raw_supply(rc, 1, &val);
+
+	return 0;
+}
+
+static int s390x_retregs_scheduled(struct task_info *task_info, struct regcache *rc, kdump_reg_t rsp)
+{
+	kdump_reg_t rip, val, _b, *b = &_b;
+
+	if (! KDUMP_TYPE_GET(_voidp, rsp+136, b))
+		rip = kt_ptr_value(b);
+	if (KDUMP_TYPE_GET(_voidp, rsp+144, b)) return -3;
+	rsp = kt_ptr_value(b);
+	task_info->sp = rsp;
+	task_info->ip = rip;
+
+	val = be64toh(rip);
+	regcache_raw_supply(rc, 1, &val);
+
+	if (! KDUMP_TYPE_GET(_voidp, rsp+136, b)) regcache_raw_supply(rc, S390_R14_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+128, b)) regcache_raw_supply(rc, S390_R13_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+120, b)) regcache_raw_supply(rc, S390_R12_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+112, b)) regcache_raw_supply(rc, S390_R11_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+104, b)) regcache_raw_supply(rc, S390_R10_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+96, b)) regcache_raw_supply(rc, S390_R9_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+88, b)) regcache_raw_supply(rc, S390_R8_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+80, b)) regcache_raw_supply(rc, S390_R7_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+72, b)) regcache_raw_supply(rc, S390_R6_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+64, b)) regcache_raw_supply(rc, S390_R5_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+56, b)) regcache_raw_supply(rc, S390_R4_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+48, b)) regcache_raw_supply(rc, S390_R3_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+40, b)) regcache_raw_supply(rc, S390_R2_REGNUM, b);
+	if (! KDUMP_TYPE_GET(_voidp, rsp+32, b)) regcache_raw_supply(rc, S390_R1_REGNUM, b);
+	
+	val = be64toh(rsp);
+	regcache_raw_supply(rc, S390_R15_REGNUM, &val);
+
+	return 0;
+}
+
 static int add_task(offset off_task, int *pid_reserve, char *task);
 static int add_task(offset off_task, int *pid_reserve, char *task)
 {
@@ -1202,18 +1382,15 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 	offset stack;
 	offset o_init_task;
 	int state;
-	int i, cpu;
+	int cpu;
 	int hashsize;
 	struct task_info *task_info;
-
 	struct thread_info *info;
 	int pid;
 	ptid_t tt;
 	struct regcache *rc;
-	long long val;
 
 	b = _b;
-
 
 	state = kt_int_value(task + MEMBER_OFFSET(task_struct,state));
 	pid = kt_int_value(task + MEMBER_OFFSET(task_struct,pid));
@@ -1228,17 +1405,6 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 	task_info->pid = pid;
 	task_info->cpu = -1;
 
-	if (types.arch == ARCH_S390X) {
-		if (! KDUMP_TYPE_GET(_voidp, rsp+136, b))
-			rip = kt_ptr_value(b);
-		if (KDUMP_TYPE_GET(_voidp, rsp+144, b)) return -3;
-		rsp = kt_ptr_value(b);
-		task_info->sp = rsp;
-		task_info->ip = rip;
-	} else {
-		if (KDUMP_TYPE_GET(_voidp, rsp, b)) return -2;
-		rip = kt_ptr_value(b);
-	}
 #ifdef _DEBUG
 	fprintf(stdout, "TASK %llx,%llx,rsp=%llx,rip=%llx,pid=%d,state=%d,name=%s\n", off_task, stack, rsp, rip, pid, state, task + MEMBER_OFFSET(task_struct,comm));
 #endif
@@ -1257,146 +1423,16 @@ static int add_task(offset off_task, int *pid_reserve, char *task)
 	inferior_ptid = tt;
 	info->name = strdup(task + MEMBER_OFFSET(task_struct,comm));
 
-	val = 0;
-
 	rc = get_thread_regcache (tt);
 
-	if (types.arch == ARCH_S390X) {
-
-		if (((cpu = get_process_cpu(off_task)) != -1)) {
-#ifdef _DEBUG
-			printf("task %p is running on %d\n", (void*)task_info->task_struct, cpu);
-#endif
+	if (((cpu = get_process_cpu(off_task)) != -1)) {
+		task_info->cpu = cpu;
+		if (kdump_arch->retregs_active_func(task_info, rc, rsp, cpu)) {
+			warning("Cannot retrieve registers of active task %d\n", pid);
 		}
-		/*
-		 * TODO: implement retrieval of register values from lowcore
-		 */
-		val = be64toh(rip);
-		regcache_raw_supply(rc, 1, &val);
-
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+136, b)) regcache_raw_supply(rc, S390_R14_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+128, b)) regcache_raw_supply(rc, S390_R13_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+120, b)) regcache_raw_supply(rc, S390_R12_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+112, b)) regcache_raw_supply(rc, S390_R11_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+104, b)) regcache_raw_supply(rc, S390_R10_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+96, b)) regcache_raw_supply(rc, S390_R9_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+88, b)) regcache_raw_supply(rc, S390_R8_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+80, b)) regcache_raw_supply(rc, S390_R7_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+72, b)) regcache_raw_supply(rc, S390_R6_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+64, b)) regcache_raw_supply(rc, S390_R5_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+56, b)) regcache_raw_supply(rc, S390_R4_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+48, b)) regcache_raw_supply(rc, S390_R3_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+40, b)) regcache_raw_supply(rc, S390_R2_REGNUM, b);
-		if (! KDUMP_TYPE_GET(_voidp, _rsp+32, b)) regcache_raw_supply(rc, S390_R1_REGNUM, b);
-		
-		val = be64toh(rsp);
-		regcache_raw_supply(rc, S390_R15_REGNUM, &val);
-	} else if (types.arch == ARCH_X86_64) {
-		/*
-		 * The task is not running - e.g. crash would show it's stuck in schedule()
-		 * Yet schedule() is not on its stack.
-		 *
-		 */
-		cpu = 0;
-		if (((cpu = get_process_cpu(off_task)) == -1)) {
-			long long regs[64];
-
-			/*
-			 * So we're gonna skip its stackframe
-			 * FIXME: use the size obtained from debuginfo
-			 */
-			rsp += 0x148;
-			if (target_read_raw_memory(rsp - 0x8 * (1 + 6), (void*)regs, 0x8 * 6))
-				warning(_("Could not read regs\n"));
-
-			regcache_raw_supply(rc, 15, &regs[5]);
-			regcache_raw_supply(rc, 14, &regs[4]);
-			regcache_raw_supply(rc, 13, &regs[3]);
-			regcache_raw_supply(rc, 12, &regs[2]);
-			regcache_raw_supply(rc, 6, &regs[1]);
-			regcache_raw_supply(rc, 3, &regs[0]);
-
-			KDUMP_TYPE_GET(_voidp, rsp, b);
-			rip = kt_ptr_value(b);
-			rsp += 8;
-
-			regcache_raw_supply(rc, 7, &rsp);
-			regcache_raw_supply(rc, 16, &rip);
-
-			task_info->sp = rsp;
-			task_info->ip = rip;
-		} else {
-			kdump_reg_t reg;
-
-			task_info->cpu = cpu;
-#ifdef _DEBUG
-			printf("task %p is running on %d\n", (void*)task_info->task_struct, cpu);
-#endif
-
-#define REG(en,mem) kdump_read_reg(dump_ctx, cpu, GET_REGISTER_OFFSET(mem), &reg); regcache_raw_supply(rc, en, &reg)
-		
-			REG(reg_RSP,sp);
-			task_info->sp = reg;
-			REG(reg_RIP,ip);
-			task_info->ip = reg;
-			REG(reg_RAX,ax);
-			REG(reg_RCX,cx);
-			REG(reg_RDX,dx);
-			REG(reg_RBX,bx);
-			REG(reg_RBP,bp);
-			REG(reg_RSI,si);
-			REG(reg_RDI,di);
-			REG(reg_R8,r8);
-			REG(reg_R9,r9);
-			REG(reg_R10,r10);
-			REG(reg_R11,r11);
-			REG(reg_R12,r12);
-			REG(reg_R13,r13);
-			REG(reg_R14,r14);
-			REG(reg_R15,r15);
-			REG(reg_RFLAGS,flags);
-			REG(reg_ES,es);
-			REG(reg_CS,cs);
-			REG(reg_SS,ss);
-			REG(reg_DS,ds);
-			REG(reg_FS,fs);
-			REG(reg_GS,gs);
-#undef REG
-		}
-	} else if (types.arch == ARCH_PPC64LE) {
-		if (((cpu = get_process_cpu(off_task)) == -1)) {
-			val = 789;
-			regcache_raw_supply(rc, 1, &val);
-			val = 456;
-			regcache_raw_supply(rc, 64, &val);
-			for (i = 0; i < 169; i ++) {
-				val = htobe64(i);
-				regcache_raw_supply(rc, i, &val);
-			}
-		} else {
-			kdump_reg_t reg;
-			task_info->cpu = cpu;
-			long long regs[64];
-			for (i = 0; i < 32; i ++) {
-				kdump_read_reg(dump_ctx, cpu, i, &reg);
-				val = htobe64(reg);
-				regcache_raw_supply(rc, i, &val);
-			//	kdump_read_reg(dump_ctx, cpu, 32, &reg); regcache_raw_supply(rc, 32, &val);
-			//	kdump_read_reg(dump_ctx, cpu, 1, &reg); regcache_raw_supply(rc, 1, &val);
-			}
-			for (i = 32; i < 49; i ++) {
-				kdump_read_reg(dump_ctx, cpu, i, &reg);
-				val = htobe64(reg);
-				regcache_raw_supply(rc, i+32, &val);
-			}
-			kdump_read_reg(dump_ctx, cpu, 32, &reg);
-			task_info->ip = reg;
-			kdump_read_reg(dump_ctx, cpu, 1, &reg);
-			task_info->sp = reg;
-			for (i = 0; i < 129; i ++) {
-				val = i;
-			//	regcache_raw_supply(rc, i, &val);
-			}
+	} else {
+		if (kdump_arch->retregs_scheduled_func(task_info, rc, rsp)) {
+			warning("Cannot retrieve registers of scheduled task %d\n", pid);
 		}
 	}
 
@@ -2091,9 +2127,6 @@ static void check_kmem_caches(void)
 	}
 }
 
-
-
-
 static struct page read_page(offset o_page)
 {
 	char b_page[GET_TYPE_SIZE(page)];
@@ -2217,20 +2250,30 @@ static int init_memmap(void)
 	//FIXME: why are all NULL?
 
 	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_FLATMEM");
+#ifdef _DEBUG
 	printf("CONFIG_FLATMEM=%s\n", cfg ? cfg : "(null)");
+#endif
 
 	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_DISCONTIGMEM");
+#ifdef _DEBUG
 	printf("CONFIG_DISCONTIGMEM=%s\n", cfg ? cfg : "(null)");
+#endif
 
 	cfg = kdump_vmcoreinfo_row(dump_ctx, "CONFIG_SPARSEMEM_VMEMMAP");
+#ifdef _DEBUG
 	printf("CONFIG_SPARSEMEM_VMEMMAP=%s\n", cfg ? cfg : "(null)");
+#endif
 
 	o_mem_map = get_symbol_value("mem_map");
+#ifdef _DEBUG
 	printf("memmap: %llx\n", o_mem_map);
+#endif
 
 	if (o_mem_map) {
 		p_memmap = kt_ptr_value_off(o_mem_map);
+#ifdef _DEBUG
 		printf("memmap is pointer to: %llx\n", p_memmap);
+#endif
 		if (p_memmap != -1)
 			memmap = p_memmap;
 	}
@@ -2269,7 +2312,7 @@ static int init_values(void)
 	struct list_iter iter;
 
 	s = NULL;
-	
+
 	b = KDUMP_TYPE_ALLOC(_voidp);
 	if (!b) goto error;
 
@@ -2315,16 +2358,13 @@ static int init_values(void)
 
 	list_for_each_from(iter, o_tasks) {
 
-		struct thread_info *info;
 		int pid;
 		ptid_t tt;
 		struct regcache *rc;
 		long long val;
-		offset main_tasks, mt;
 		struct list_iter iter_thr;
 		offset o_threads;
 
-		//fprintf(stderr, __FILE__":%d: ok\n", __LINE__);
 		off_task = off - MEMBER_OFFSET(task_struct,tasks);
 		if (KDUMP_TYPE_GET(task_struct, off_task, task)) continue;
 
@@ -2349,9 +2389,11 @@ static int init_values(void)
 	printf_unfiltered(_("Loaded processes: %d\n"), cnt);
 	init_memmap();
 
-//	check_kmem_caches();
-//	check_slab_obj(0xffff880138bedf40UL);
-//	check_slab_obj(0xffff8801359734c0UL);
+#ifdef _DEBUG
+	check_kmem_caches();
+	check_slab_obj(0xffff880138bedf40UL);
+	check_slab_obj(0xffff8801359734c0UL);
+#endif
 
 	return 0;
 error:
@@ -2361,14 +2403,6 @@ error:
 	return 1;
 }
 
-struct t_kdump_arch {
-	char *kdident;
-	char *gdbident;
-	int flags;
-	t_arch arch;
-	int (*init_func)(const struct t_kdump_arch *, int *);
-} ;
-
 static int kdump_ppc64_init(const struct t_kdump_arch *a, int *flags)
 {
 	*flags = F_BIG_ENDIAN;
@@ -2376,9 +2410,12 @@ static int kdump_ppc64_init(const struct t_kdump_arch *a, int *flags)
 }
 
 static const struct t_kdump_arch archlist[] = {
-	{"x86_64", "i386:x86-64",      F_LITTLE_ENDIAN, ARCH_X86_64,  NULL},
-	{"s390x",  "s390:64-bit",      F_BIG_ENDIAN,    ARCH_S390X,   NULL},
-	{"ppc64",  "powerpc:common64", F_UNKN_ENDIAN,   ARCH_PPC64LE, kdump_ppc64_init},
+	{"x86_64", "i386:x86-64",      F_LITTLE_ENDIAN, ARCH_X86_64,  NULL,
+		x86_retregs_active, x86_retregs_scheduled},
+	{"s390x",  "s390:64-bit",      F_BIG_ENDIAN,    ARCH_S390X,   NULL,
+		s390x_retregs_active, s390x_retregs_scheduled},
+	{"ppc64",  "powerpc:common64", F_UNKN_ENDIAN,   ARCH_PPC64, kdump_ppc64_init,
+		ppc64_retregs_active, ppc64_retregs_scheduled},
 	{NULL}
 };
 
@@ -2416,6 +2453,7 @@ static int kdump_do_init(void)
 	gai.bfd_arch_info = ait;
 	garch = gdbarch_find_by_info(gai);
 	kdump_gdbarch = garch;
+	kdump_arch = a;
 #ifdef _DEBUG
 	fprintf(stderr, "arch=%s,ait=%p,garch=%p\n", selected_architecture_name(), ait, garch);
 #endif
@@ -2423,6 +2461,7 @@ static int kdump_do_init(void)
 	if (a->init_func) {
 		if ((ret = a->init_func(a, &flags)) != 0) {
 			error(_("Architecture %s init_func()=%d"), a->kdident, ret);
+			kdump_arch = NULL;
 			return -5;
 		}
 	}
@@ -2430,7 +2469,7 @@ static int kdump_do_init(void)
 	inf = current_inferior();
 
 	types.arch = a->arch;
-	
+
 	if (init_types(flags)) {
 		warning(_("kdump: Cannot init types!\n"));
 	}
@@ -2935,7 +2974,7 @@ static void kdumpmodules_command (char *filename, int from_tty)
 				  section_addrs, flags);
 		add_target_sections_of_objfile (objf);
 	}
-	
+
 	error:
 
 	if (v) free(v);
@@ -2958,9 +2997,7 @@ static void kdumpps_command(char *fn, int from_tty)
 		if (!task) continue;
 		if (task->cpu == -1) cpu[0] = '\0';
 		else snprintf(cpu, 5, "% 4d", task->cpu);
-#ifdef _DEBUG
 		printf_filtered(_("% 7d %llx %llx %llx %-4s %s\n"), task->pid, task->task_struct, task->ip, task->sp, cpu, tp->name);
-#endif
 	}
 }
 
