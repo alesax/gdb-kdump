@@ -25,7 +25,6 @@
 #include "python-internal.h"
 #include "objfiles.h"
 #include "value.h"
-#include "bfd-python.h"
 
 typedef struct msympy_symbol_object {
   PyObject_HEAD
