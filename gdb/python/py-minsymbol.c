@@ -220,6 +220,7 @@ set_symbol (minsym_object *obj, struct bound_minimal_symbol *bound)
 
   case mst_data:
   case mst_abs:
+  case mst_bss:
   case mst_file_data:
   case mst_file_bss:
     obj->type = builtin_type(python_gdbarch)->builtin_data_ptr;
